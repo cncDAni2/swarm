@@ -36,6 +36,10 @@ export class Game {
             health: maxHP,
             maxHealth: maxHP,
             regenSpeed: regen,
+            energy: 100,
+            maxEnergy: 100,
+            isExhausted: false,
+            lastShootInteractionTime: 0,
             shootVisualTimer: 0
         };
 
@@ -199,6 +203,8 @@ export class Game {
         
         this.player.health = maxHP;
         this.player.maxHealth = maxHP;
+        this.player.energy = 100;
+        this.player.isExhausted = false;
         this.player.x = this.canvas.width / 2;
         this.player.y = this.canvas.height / 2;
         this.player.vx = 0;
@@ -317,6 +323,23 @@ export class Game {
         if (this.player.health < this.player.maxHealth && this.player.health > 0) {
             this.player.health = Math.min(this.player.maxHealth, this.player.health + (this.player.regenSpeed * deltaTime / 1000));
         }
+
+        // Energy regen logic
+        const timeSinceLastShot = currentTime - this.player.lastShootInteractionTime;
+        
+        if (timeSinceLastShot >= 2000) {
+            // Rapid regen (3/sec) if not shot for 2 seconds, no limit
+            this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + (3 * deltaTime / 1000));
+        } else if (this.player.energy < 50) {
+            // Standard regen (1/sec) only under 50 energy
+            this.player.energy = Math.min(50, this.player.energy + (1 * deltaTime / 1000));
+        }
+        
+        // Recover from exhaustion at 20 energy
+        if (this.player.isExhausted && this.player.energy >= 20) {
+            this.player.isExhausted = false;
+        }
+
         if (this.player.health <= 0) {
             this.player.health = 0;
             if (!this.gameOver) {
@@ -338,22 +361,41 @@ export class Game {
         }
 
         // Shooting
-        if (this.isMouseDown && currentTime - this.lastShotTime >= this.fireRateDelay) {
+        if (this.isMouseDown && currentTime - this.lastShotTime >= this.fireRateDelay && !this.player.isExhausted) {
             const dx = this.mousePos.x - this.player.x;
             const dy = this.mousePos.y - this.player.y;
             const angle = Math.atan2(dy, dx);
+            
+            const isPowerful = this.player.energy > 80;
+            const bulletRadius = isPowerful ? 6 : 4;
+            const bulletDamage = isPowerful ? 1.5 : 1.0;
+            const bulletColor = isPowerful ? '#87CEEB' : 'yellow';
+            
             this.bullets.push({
                 x: this.player.x,
                 y: this.player.y,
                 vx: Math.cos(angle) * this.bulletSpeed,
                 vy: Math.sin(angle) * this.bulletSpeed,
-                radius: 4,
-                color: 'yellow',
+                radius: bulletRadius,
+                damage: bulletDamage,
+                color: bulletColor,
                 ownerType: 'player',
                 source: this.player
             });
-            this.audio.playRandomShoot();
+
+            // Consume energy
+            this.player.energy = Math.max(0, this.player.energy - 1);
+            if (this.player.energy === 0) {
+                this.player.isExhausted = true;
+            }
+
+            if (isPowerful) {
+                this.audio.playStrongShoot();
+            } else {
+                this.audio.playRandomShoot();
+            }
             this.lastShotTime = currentTime;
+            this.player.lastShootInteractionTime = currentTime;
             this.player.shootVisualTimer = 100;
         }
 
@@ -380,6 +422,10 @@ export class Game {
                     this.player.health += 15; // Ultra-violence, can overflow
                 }
             }
+
+            // Energy reset on new round
+            this.player.energy = this.player.maxEnergy;
+            this.player.isExhausted = false;
 
             this.audio.playNewRound();
             this.playedDamageLow = false;
@@ -484,6 +530,8 @@ export class Game {
             }, () => {
                 // Boss Death Callback
                 this.kills += 10; // Extra kills for boss
+                this.player.energy = this.player.maxEnergy; // Fully restore energy after boss
+                this.player.isExhausted = false;
                 this.enemies = []; // Kill all other monsters
                 this.wormholes = []; // Clear active wormholes
                 this.boss = null;
@@ -524,21 +572,38 @@ export class Game {
         }
 
         this.enemies.forEach(enemy => {
-            enemy.update(this.player, this.enemies, this.bullets, currentTime, deltaTime, (b) => {
-                this.bullets.push(b);
-                if (b.ownerType === 'enemy') {
-                    this.audio.playEnemyShoot();
-                } else if (b.ownerType === 'sky-pulse') {
-                    this.audio.playEnemyPlasma();
-                }
-            }, this.canvas.width, this.canvas.height);
+            enemy.update(
+                this.player, 
+                this.enemies, 
+                this.bullets, 
+                currentTime, 
+                deltaTime, 
+                (b) => {
+                    this.bullets.push(b);
+                    if (b.ownerType === 'enemy') {
+                        this.audio.playEnemyShoot();
+                    } else if (b.ownerType === 'sky-pulse') {
+                        this.audio.playEnemyPlasma();
+                    }
+                }, 
+                this.canvas.width, 
+                this.canvas.height,
+                this.getBarriers(),
+                this.lineRectIntersect.bind(this)
+            );
             
             // Revi Attack Logic
             if (enemy.type === 'revi' && enemy.ai) {
+                // Play sound exactly when targeting starts
+                if (enemy.ai.needsAttackSound) {
+                    this.audio.playReviAttack();
+                    enemy.ai.needsAttackSound = false;
+                }
+
                 if (enemy.ai.phase === 'ATTACK' && enemy.ai.attackTriggered) {
                     // One-time action when attack triggers
-                    if (currentTime - enemy.ai.phaseStartTime < 50) { // Small window to trigger damage and sound
-                        this.audio.playReviAttack();
+                    if (currentTime - enemy.ai.phaseStartTime < 50) { // Small window to trigger damage
+                        this.audio.playReviShoot();
                         
                         // Check if beam is blocked
                         const barriers = this.getBarriers();
@@ -609,6 +674,7 @@ export class Game {
                                 if (e.health <= 0) {
                                     this.explosions.push({x: e.x, y: e.y, life: 0.8, decay: 0.08, maxRadius: 30});
                                     this.kills++;
+                                    this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + 3);
                                     this.enemies.splice(j, 1);
                                 }
                             }
@@ -724,7 +790,7 @@ export class Game {
                     const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
                     
                     if (!isBossInitialImmune && !this.boss.isInvulnerable) {
-                        this.boss.health -= 1;
+                        this.boss.health -= (b.damage || 1);
                         this.explosions.push({x: b.x, y: b.y, life: 0.5, decay: 0.1, maxRadius: 20});
                     }
                     hit = true; // Bullet disappears on hit even if immortal
@@ -744,14 +810,17 @@ export class Game {
 
                     const d = Math.sqrt((b.x-e.x)**2 + (b.y-e.y)**2);
                     if (d < e.size/2 + 5) {
-                        e.health -= 1;
+                        e.health -= (b.damage || 1);
                         if (b.ownerType === 'player') {
                             e.lastTimeHitByPlayer = this.gameTime;
                         }
                         hit = true;
                         if (e.health <= 0) {
                             this.explosions.push({x: e.x, y: e.y, life: 0.8, decay: 0.08, maxRadius: 30});
-                            if (b.ownerType === 'player') this.kills++;
+                            if (b.ownerType === 'player') {
+                                this.kills++;
+                                this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + 3);
+                            }
                             this.enemies.splice(j, 1);
                         }
                         break;
@@ -1153,6 +1222,34 @@ export class Game {
         this.ctx.font = 'bold 12px Courier New';
         this.ctx.textAlign = 'center';
         this.ctx.fillText(`${Math.ceil(this.player.health)} / ${this.player.maxHealth} HP`, hx + barWidth/2, hy + 13);
+
+        // Energy Bar (Blue, thinner, below health bar)
+        const energyBarHeight = 6;
+        const ey = hy + barHeight + 4;
+        
+        // Background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fillRect(hx, ey, barWidth, energyBarHeight);
+        
+        // Fill
+        const energyPercent = this.player.energy / this.player.maxEnergy;
+        if (this.player.energy > 80) {
+            this.ctx.fillStyle = '#00BFFF'; // Deep Sky Blue (Lighter)
+        } else {
+            this.ctx.fillStyle = '#0000FF'; // Blue
+        }
+        
+        // If exhausted, maybe a different color? The prompt didn't specify, but regular blue is fine.
+        if (this.player.isExhausted) {
+            this.ctx.fillStyle = '#4169E1'; // Royal Blue (desaturated)
+        }
+
+        this.ctx.fillRect(hx, ey, barWidth * energyPercent, energyBarHeight);
+        
+        // Border
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(hx, ey, barWidth, energyBarHeight);
 
         // Round display
         if (this.roundTextAlpha > 0) {

@@ -40,7 +40,7 @@ export class Enemy {
         }
     }
 
-    update(player, enemies, bullets, currentTime, deltaTime, spawnBullet, canvasWidth, canvasHeight) {
+    update(player, enemies, bullets, currentTime, deltaTime, spawnBullet, canvasWidth, canvasHeight, barriers, lineRectIntersect) {
         // No decrementing logic needed, we check against currentTime
         
         if (this.stunRemaining > 0) {
@@ -60,7 +60,7 @@ export class Enemy {
         } else if (this.type === 'melee') {
             this.ai.update(player, enemies, bullets, currentTime);
         } else if (this.type === 'revi') {
-            this.ai.update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight);
+            this.ai.update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight, barriers, lineRectIntersect);
         } else {
             this.ai.update(player, enemies);
         }

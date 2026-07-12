@@ -13,7 +13,7 @@ export class ReviAI {
         this.attackDuration = 500; // Flash for 500ms
     }
 
-    update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight) {
+    update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight, barriers, lineRectIntersect) {
         if (this.phaseStartTime === 0) this.phaseStartTime = currentTime;
 
         if (this.phase === 'RANDOM_MOVE') {
@@ -22,19 +22,38 @@ export class ReviAI {
                 this.lastDirectionChangeTime = currentTime;
             }
 
-            if (currentTime - this.phaseStartTime > 3000) {
-                this.phase = 'TARGETING';
-                this.phaseStartTime = currentTime;
-                this.randomDirection = { x: 0, y: 0 };
-            } else {
-                if (currentTime - this.lastDirectionChangeTime > 1000) {
-                    this.setRandomDirection();
-                    this.lastDirectionChangeTime = currentTime;
+            const timeInPhase = currentTime - this.phaseStartTime;
+            
+            // Should move for at least 3 seconds
+            if (timeInPhase > 3000) {
+                // Check line of sight every 200ms after minimum move duration
+                if (!this.lastLosCheckTime || currentTime - this.lastLosCheckTime > 200) {
+                    this.lastLosCheckTime = currentTime;
+                    
+                    const isBlocked = barriers && barriers.some(wall => 
+                        lineRectIntersect(
+                            this.owner.x, this.owner.y, player.x, player.y,
+                            wall.x - wall.size/2, wall.y - wall.size/2, wall.size, wall.size
+                        )
+                    );
+
+                    if (!isBlocked) {
+                        this.phase = 'TARGETING';
+                        this.phaseStartTime = currentTime;
+                        this.randomDirection = { x: 0, y: 0 };
+                        this.needsAttackSound = true; // Flag for Game.js to play sound
+                    }
                 }
-                
-                this.move(this.randomDirection.x, this.randomDirection.y);
-                this.keepInBounds(canvasWidth, canvasHeight);
             }
+
+            // Always move while in RANDOM_MOVE
+            if (currentTime - this.lastDirectionChangeTime > 1000) {
+                this.setRandomDirection();
+                this.lastDirectionChangeTime = currentTime;
+            }
+            
+            this.move(this.randomDirection.x, this.randomDirection.y);
+            this.keepInBounds(canvasWidth, canvasHeight);
 
         } else if (this.phase === 'TARGETING') {
             this.targetPoint = { x: player.x, y: player.y };

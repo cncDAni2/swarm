@@ -11,7 +11,8 @@ export class AudioService {
             gameOver: null,
             spawn: null,
             menuAmbience: null,
-            reviAttack: null
+            reviAttack: null,
+            reviShoot: null
         };
         this.loadSounds();
     }
@@ -28,6 +29,10 @@ export class AudioService {
         laser1.load();
         laser2.load();
         this.sounds.shoot.push(laser1, laser2);
+
+        // Preload strong player laser
+        this.sounds.shootStrong = new Audio('./assets/shoot-player-laser-strong.mp3');
+        this.sounds.shootStrong.load();
 
         // Preload enemy laser
         this.sounds.enemyShoot = new Audio('./assets/shoot-enemy-laser.mp3');
@@ -65,6 +70,10 @@ export class AudioService {
         // Revi attack sound
         this.sounds.reviAttack = new Audio('./assets/revi-attack.mp3');
         this.sounds.reviAttack.load();
+
+        // Revi shoot sound
+        this.sounds.reviShoot = new Audio('./assets/revi-shoot.mp3');
+        this.sounds.reviShoot.load();
     }
 
     playNewRound() {
@@ -74,6 +83,10 @@ export class AudioService {
 
     playReviAttack() {
         this._playSound(this.sounds.reviAttack);
+    }
+
+    playReviShoot() {
+        this._playSound(this.sounds.reviShoot);
     }
 
     playDamaged() {
@@ -100,6 +113,10 @@ export class AudioService {
         // 80% chance for laser 1, 20% for laser 2
         const sound = Math.random() < 0.8 ? this.sounds.shoot[0] : this.sounds.shoot[1];
         this._playSound(sound);
+    }
+
+    playStrongShoot() {
+        this._playSound(this.sounds.shootStrong);
     }
 
     playEnemyShoot() {
