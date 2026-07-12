@@ -90,21 +90,49 @@ export class SkyPulseAI {
 
         // Tüzelés: Hőkövető lövedék (Csak 1000 egységen belül)
         if (distToPlayer < 1000 && currentTime - this.lastShotTime > this.fireRate) {
-            // Repülő egység nem tart a földi egységek eltalálásától
             const angle = Math.atan2(dy, dx);
-            spawnBullet({
+            const rand = Math.random();
+            
+            let bulletProps = {
                 x: this.owner.x,
                 y: this.owner.y,
-                vx: Math.cos(angle) * 1.5, // Further reduced speed (was 3)
+                vx: Math.cos(angle) * 1.5,
                 vy: Math.sin(angle) * 1.5,
-                radius: 12, // Increased size
+                radius: 12,
                 color: 'cyan',
                 ownerType: 'sky-pulse',
                 source: this.owner,
                 isHoming: true,
                 createdAt: currentTime,
                 lifetime: 4000
-            });
+            };
+
+            if (rand < 0.33) {
+                // Balra lő
+                const ux = dx / distToPlayer;
+                const uy = dy / distToPlayer;
+                const perpX = uy;
+                const perpY = -ux;
+                bulletProps.isHoming = false;
+                bulletProps.preHomingTarget = {
+                    x: player.x + perpX * 600,
+                    y: player.y + perpY * 600
+                };
+            } else if (rand < 0.66) {
+                // Jobbra lő
+                const ux = dx / distToPlayer;
+                const uy = dy / distToPlayer;
+                const perpX = -uy;
+                const perpY = ux;
+                bulletProps.isHoming = false;
+                bulletProps.preHomingTarget = {
+                    x: player.x + perpX * 600,
+                    y: player.y + perpY * 600
+                };
+            }
+            // else: Immediate homing (default setup)
+
+            spawnBullet(bulletProps);
             this.lastShotTime = currentTime;
             // Randomize next shot
             this.fireRate = this.baseFireRate * (0.75 + Math.random() * 0.5);

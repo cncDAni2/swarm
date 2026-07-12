@@ -9,6 +9,7 @@ export class AudioService {
             damagedHeavy: null,
             bossDamaged: null,
             gameOver: null,
+            spawn: null,
             menuAmbience: null
         };
         this.loadSounds();
@@ -16,7 +17,7 @@ export class AudioService {
 
     loadSounds() {
         // Preload menu ambience
-        this.sounds.menuAmbience = new Audio('./assets/menu-ambience.webm');
+        this.sounds.menuAmbience = new Audio('./assets/menu-ambience.mp3');
         this.sounds.menuAmbience.loop = true;
         this.sounds.menuAmbience.load();
 
@@ -54,6 +55,11 @@ export class AudioService {
         // Game Over sound
         this.sounds.gameOver = new Audio('./assets/game-over.mp3');
         this.sounds.gameOver.load();
+
+        // Spawn sound
+        this.sounds.spawn = new Audio('./assets/spawn.mp3');
+        this.sounds.spawn.volume = 0.66;
+        this.sounds.spawn.load();
     }
 
     playNewRound() {
@@ -75,6 +81,10 @@ export class AudioService {
 
     playBossDamaged() {
         this._playSound(this.sounds.bossDamaged);
+    }
+
+    playSpawn() {
+        this._playSound(this.sounds.spawn);
     }
 
     playRandomShoot() {

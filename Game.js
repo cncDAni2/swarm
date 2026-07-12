@@ -415,6 +415,7 @@ export class Game {
                 const newEnemy = new Enemy(x, y, type, shieldExpiry);
 
                 this.enemies.push(newEnemy);
+                this.audio.playSpawn();
             });
             if (wh.isFinished()) this.wormholes.splice(i, 1);
         }
@@ -595,7 +596,19 @@ export class Game {
             if (b.isDetonating) continue;
 
             // Homing logic for sky-pulse bullets
-            if (b.isHoming) {
+            if (b.preHomingTarget) {
+                const dx = b.preHomingTarget.x - b.x;
+                const dy = b.preHomingTarget.y - b.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 40) { // Reach within 40 units to switch
+                    delete b.preHomingTarget;
+                    b.isHoming = true;
+                } else {
+                    const rushSpeed = 4.0; 
+                    b.vx = (dx / dist) * rushSpeed;
+                    b.vy = (dy / dist) * rushSpeed;
+                }
+            } else if (b.isHoming) {
                 const dx = this.player.x - b.x;
                 const dy = this.player.y - b.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
@@ -888,6 +901,58 @@ export class Game {
         const barHeight = 18;
         const hx = (this.canvas.width - barWidth) / 2;
         const hy = this.canvas.height - 40;
+
+        // Wave Timer Circle
+        const timerRadius = 18;
+        const tx = hx - 30; // 30px to the left of the health bar
+        const ty = hy + barHeight / 2;
+
+        this.ctx.beginPath();
+        this.ctx.arc(tx, ty, timerRadius, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#87CEEB';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        if (this.boss) {
+            // Full circle for boss
+            this.ctx.beginPath();
+            this.ctx.arc(tx, ty, timerRadius - 3, 0, Math.PI * 2);
+            this.ctx.fillStyle = 'rgba(135, 206, 235, 0.3)';
+            this.ctx.fill();
+
+            // Draw skull emoji for boss
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.font = '16px serif';
+            this.ctx.fillText('💀', tx, ty);
+        } else {
+            const timeElapsed = this.gameTime - this.lastWormholeSpawn;
+            const remainingTimeMs = Math.max(0, this.wormholeInterval - timeElapsed);
+            const remainingSecs = Math.ceil(remainingTimeMs / 1000);
+            const fraction = remainingTimeMs / this.wormholeInterval;
+
+            // Draw depleting sector
+            this.ctx.beginPath();
+            this.ctx.moveTo(tx, ty);
+            // Starting from top, clockwise. -PI/2 is top.
+            this.ctx.arc(tx, ty, timerRadius - 3, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * fraction));
+            this.ctx.lineTo(tx, ty);
+            this.ctx.fillStyle = 'rgba(135, 206, 235, 0.5)';
+            this.ctx.fill();
+
+            // Draw seconds
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = 'bold 12px Courier New';
+            this.ctx.fillText(remainingSecs, tx, ty);
+        }
+
+        // Reset text alignment for health bar
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'alphabetic';
 
         this.ctx.shadowBlur = 15;
         this.ctx.shadowColor = 'rgba(0, 255, 100, 0.5)';

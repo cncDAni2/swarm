@@ -54,6 +54,7 @@ export class Boss {
             this.rapidSpawnTimer -= deltaTime;
             if (this.rapidSpawnTimer <= 0) {
                 this.spawnMinion(enemies);
+                if (audio) audio.playSpawn();
                 this.rapidSpawnTimer = 200;
             }
         }
@@ -80,6 +81,7 @@ export class Boss {
         // 1. Spawning enemies from 4 sides
         if (!this.isInvulnerable && currentTime - this.lastSpawnTime >= this.spawnCooldown) {
             this.spawnMinion(enemies);
+            if (audio) audio.playSpawn();
             this.lastSpawnTime = currentTime;
             this.spawnCooldown = 2000 + Math.random() * 2000;
         }
