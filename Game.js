@@ -99,7 +99,7 @@ export class Game {
         this.wormholeInterval = 40000;
         this.wormholePatternCounter = 0;
         
-        this.round = 4;
+        this.round = 0;
         this.roundDisplayTimer = -5000;
         this.roundDisplayDuration = 3000;
         this.roundTextAlpha = 0;
