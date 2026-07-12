@@ -24,10 +24,12 @@ export class FastChaserAI {
 ```
 
 ### 2. Update Enemy.js
-In `Enemy.js`, update the `draw` method to handle the new type's visual representation (e.g., a different shape or color).
+- **Constructor**: Add the new type string to the `Enemy` constructor to set its base `size`, `health`, `color`, and instantiate the new AI module.
+- **Draw Method**: Update the `draw` method if the new type needs specific visuals (like the Rifleman's red aura). Use the `assets` object for sprites if available.
 
 ### 3. Register in Spawning System
-Update `Wormhole.js` or `Game.js` to include the new type in the spawn selection logic.
+Update `Wormhole.js` to include the new type in a spawn pattern (`this.spawnLimits` and pattern sequence logic).
+
 
 ## Conventions
 - **Melee**: Squares

@@ -16,25 +16,20 @@ export class BasicMeleeAI {
         }
 
         if (!this.partner) {
-            // Find the specific logic-assigned partner using pairId
-            this.partner = riflemen.find(r => r.pairId === this.owner.pairId);
-            
-            // Fallback to closest if ID matching fails for some reason
-            if (!this.partner) {
-                const availableRiflemen = riflemen.filter(r => {
-                    const hasPartner = enemies.some(e => e.type === 'melee' && e.ai && e.ai.partner === r);
-                    return !hasPartner;
-                });
-                let candidates = availableRiflemen.length > 0 ? availableRiflemen : riflemen;
-                let minDist = Infinity;
-                candidates.forEach(r => {
-                    const d = Math.sqrt((this.owner.x - r.x) ** 2 + (this.owner.y - r.y) ** 2);
-                    if (d < minDist) {
-                        minDist = d;
-                        this.partner = r;
-                    }
-                });
-            }
+            // Find a partner if Game.js hasn't assigned one yet or if they died
+            const availableRiflemen = riflemen.filter(r => {
+                const hasPartner = enemies.some(e => e.type === 'melee' && e.ai && e.ai.partner === r);
+                return !hasPartner;
+            });
+            let candidates = availableRiflemen.length > 0 ? availableRiflemen : riflemen;
+            let minDist = Infinity;
+            candidates.forEach(r => {
+                const d = Math.sqrt((this.owner.x - r.x) ** 2 + (this.owner.y - r.y) ** 2);
+                if (d < minDist) {
+                    minDist = d;
+                    this.partner = r;
+                }
+            });
         }
 
         let moveX = 0;
@@ -60,9 +55,17 @@ export class BasicMeleeAI {
                 const perpX = -uy;
                 const perpY = ux;
 
-                // Position: 80 units in front of Rifleman, 35 units to the side
-                targetX = this.partner.x + ux * 80 + perpX * 35;
-                targetY = this.partner.y + uy * 80 + perpY * 35;
+                // Find other bodyguards for this partner to spread out
+                const bodyguards = enemies.filter(e => e.type === 'melee' && e.ai && e.ai.partner === this.partner);
+                const myIndex = bodyguards.indexOf(this.owner);
+                
+                // Spread pattern: alternate sides and stagger depth
+                const side = (myIndex % 2 === 0) ? 1 : -1;
+                const depth = 80 + Math.floor(myIndex / 2) * 25;
+                const offsetSide = 35;
+
+                targetX = this.partner.x + ux * depth + perpX * offsetSide * side;
+                targetY = this.partner.y + uy * depth + perpY * offsetSide * side;
                 isFormation = true;
             }
         }

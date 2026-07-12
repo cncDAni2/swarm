@@ -101,6 +101,11 @@ export class Game {
         
         this.gameTime = 0;
         this.paused = false;
+        
+        // Tracking for behavior re-evaluation
+        this.lastRiflemanCount = 0;
+        this.lastMeleeCount = 0;
+
         this.setupEventListeners();
         this.setupUI();
     }
@@ -409,24 +414,6 @@ export class Game {
             wh.update(currentTime, (x, y, type, shieldExpiry) => {
                 const newEnemy = new Enemy(x, y, type, shieldExpiry);
 
-                if (wh.pattern === 'duo') {
-                    if (!this.nextPairId) this.nextPairId = 1;
-                    if (!this._spawnSequence) this._spawnSequence = 0;
-                    
-                    const currentSeq = this._spawnSequence % 4;
-                    if (currentSeq === 0) newEnemy.pairId = this.nextPairId;
-                    if (currentSeq === 1) newEnemy.pairId = this.nextPairId + 1;
-                    if (currentSeq === 2) { 
-                        newEnemy.pairId = this.nextPairId;
-                    }
-                    if (currentSeq === 3) {
-                        newEnemy.pairId = this.nextPairId + 1;
-                        this.nextPairId += 2;
-                    }
-                    
-                    this._spawnSequence++;
-                }
-
                 this.enemies.push(newEnemy);
             });
             if (wh.isFinished()) this.wormholes.splice(i, 1);
@@ -724,6 +711,49 @@ export class Game {
             this.explosions[i].life -= this.explosions[i].decay;
             if (this.explosions[i].life <= 0) this.explosions.splice(i, 1);
         }
+
+        // Re-evaluate pairings if ground unit counts changed
+        const currentRiflemen = this.enemies.filter(e => e.type === 'rifleman');
+        const currentMelee = this.enemies.filter(e => e.type === 'melee');
+        
+        if (currentRiflemen.length !== this.lastRiflemanCount || currentMelee.length !== this.lastMeleeCount) {
+            this.redistributeBodyguards();
+            this.lastRiflemanCount = currentRiflemen.length;
+            this.lastMeleeCount = currentMelee.length;
+        }
+    }
+
+    redistributeBodyguards() {
+        const riflemen = this.enemies.filter(e => e.type === 'rifleman');
+        const meleeUnits = this.enemies.filter(e => e.type === 'melee');
+        
+        if (riflemen.length === 0) {
+            meleeUnits.forEach(m => { if (m.ai) m.ai.partner = null; });
+            return;
+        }
+
+        const counts = new Map();
+        riflemen.forEach(r => counts.set(r, 0));
+
+        // Sort melee units by distance to their closest rifleman to try and fill logical slots first?
+        // Or just iterate. Iteration is probably fine.
+        meleeUnits.forEach(m => {
+            const sortedRiflemen = [...riflemen].sort((a, b) => {
+                const countA = counts.get(a);
+                const countB = counts.get(b);
+                if (countA !== countB) return countA - countB;
+                
+                const distA = (m.x - a.x)**2 + (m.y - a.y)**2;
+                const distB = (m.x - b.x)**2 + (m.y - b.y)**2;
+                return distA - distB;
+            });
+
+            const bestPartner = sortedRiflemen[0];
+            if (m.ai) {
+                m.ai.partner = bestPartner;
+                counts.set(bestPartner, counts.get(bestPartner) + 1);
+            }
+        });
     }
 
     draw() {

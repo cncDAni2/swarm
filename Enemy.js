@@ -41,8 +41,8 @@ export class Enemy {
             return;
         }
 
-        // Only show debug ID if the partner is still alive
-        this.hasActivePartner = this.pairId && enemies.some(e => e !== this && e.pairId === this.pairId);
+        // Check if this enemy has a partner (Melee -> Rifleman)
+        this.hasActivePartner = (this.ai && this.ai.partner && enemies.includes(this.ai.partner));
 
         if (this.type === 'rifleman') {
             this.ai.update(player, enemies, bullets, currentTime, spawnBullet);

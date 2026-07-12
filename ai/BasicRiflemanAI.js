@@ -156,13 +156,12 @@ export class BasicRiflemanAI {
     }
 
     hasMeleePartnerInFront(player, enemies) {
-        // Find if this Rifleman has a Melee partner (who has this as .partner)
-        // and if that Melee is between this and the player.
+        // Find if this Rifleman has Melee partners (who have this as .partner)
+        // and if any of them are between this and the player.
         const me = this.owner;
 
-        // Check assigned partner via pairId
-        const partner = enemies.find(e => e.type === 'melee' && e.pairId === me.pairId);
-        if (!partner) return false;
+        const partners = enemies.filter(e => e.type === 'melee' && e.ai && e.ai.partner === me);
+        if (partners.length === 0) return false;
 
         const dx = player.x - me.x;
         const dy = player.y - me.y;
@@ -173,20 +172,21 @@ export class BasicRiflemanAI {
         const ux = dx / distToPlayer;
         const uy = dy / distToPlayer;
 
-        // Check if the partner is between me and the player
-        const vpx = partner.x - me.x;
-        const vpy = partner.y - me.y;
-        const proj = vpx * ux + vpy * uy;
+        for (const partner of partners) {
+            // Check if the partner is between me and the player
+            const vpx = partner.x - me.x;
+            const vpy = partner.y - me.y;
+            const proj = vpx * ux + vpy * uy;
 
-        if (proj > 5 && proj < distToPlayer) {
-            // Partner is in front. Check how close to the line.
-            const closestX = me.x + ux * proj;
-            const closestY = me.y + uy * proj;
-            const distToLineSq = (partner.x - closestX) ** 2 + (partner.y - closestY) ** 2;
-            
-            // If within 80 units of the ideal line, we consider it "in front"
-            // Increased from 60 to be a bit more lenient
-            return distToLineSq < 6400;
+            if (proj > 5 && proj < distToPlayer) {
+                // Partner is in front. Check how close to the line.
+                const closestX = me.x + ux * proj;
+                const closestY = me.y + uy * proj;
+                const distToLineSq = (partner.x - closestX) ** 2 + (partner.y - closestY) ** 2;
+                
+                // If within 80 units of the ideal line, we consider it "in front"
+                if (distToLineSq < 6400) return true;
+            }
         }
         
         return false;
