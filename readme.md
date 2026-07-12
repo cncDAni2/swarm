@@ -16,6 +16,23 @@ python -m http.server 8000
 
 Then open your browser and navigate to `http://localhost:8000`.
 
+## Asztali alkalmazás (Electron)
+
+A játék elérhető asztali alkalmazásként is az Electron keretrendszernek köszönhetően.
+
+### Futtatás fejlesztői módban
+A játék elindításához Electron-ban:
+```bash
+npm start
+```
+
+### EXE fájl készítése (Build)
+A játékot az alábbi paranccsal fordíthatod át egyetlen futtatható EXE fájlba:
+```bash
+npm run build
+```
+A kész alkalmazás a `dist/` mappában fog megjelenni.
+
 ### Option 2: Node.js (http-server)
 If you have Node.js installed, you can use the `http-server` package:
 ```bash

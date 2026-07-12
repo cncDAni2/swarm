@@ -306,9 +306,14 @@
         const selectionSound = new Audio('./assets/select.mp3');
         selectionSound.volume = 1;
 
-        // Start menu ambience on first interaction
+        // Try to play immediately (works in Electron with the configured autoplay policy)
+        audio.playMenuAmbience();
+
+        // Fallback for browsers: start menu ambience on first interaction
         const startAmbience = () => {
-            audio.playMenuAmbience();
+            if (audio.sounds.menuAmbience && audio.sounds.menuAmbience.paused) {
+                audio.playMenuAmbience();
+            }
             window.removeEventListener('click', startAmbience);
             window.removeEventListener('keydown', startAmbience);
         };
