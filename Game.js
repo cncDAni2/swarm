@@ -4,11 +4,24 @@ import { AudioService } from './AudioService.js';
 import { Boss } from './Boss.js';
 
 export class Game {
-    constructor(canvas) {
+    constructor(canvas, difficulty = 'ultra-violence') {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.audio = new AudioService();
+        this.difficulty = difficulty;
         
+        // Difficulty settings
+        let maxHP = 100;
+        let regen = 1;
+        
+        if (this.difficulty === 'hurt-me-plenty') {
+            maxHP = 200;
+            regen = 2;
+        } else if (this.difficulty === 'too-young-to-die') {
+            maxHP = 500;
+            regen = 3;
+        }
+
         this.player = {
             x: canvas.width / 2,
             y: canvas.height / 2,
@@ -19,8 +32,9 @@ export class Game {
             friction: 0.12,
             maxSpeed: 12,
             color: '#87CEEB',
-            health: 100,
-            maxHealth: 100,
+            health: maxHP,
+            maxHealth: maxHP,
+            regenSpeed: regen,
             shootVisualTimer: 0
         };
 
@@ -84,6 +98,8 @@ export class Game {
         this.playedDamageLow = false;
         this.playedDamageHeavy = false;
         
+        this.gameTime = 0;
+        this.paused = false;
         this.setupEventListeners();
         this.setupUI();
     }
@@ -123,13 +139,13 @@ export class Game {
             document.body.appendChild(btn);
         };
 
-        styleButton(this.restartBtn, 'RESTART FROM START');
+        styleButton(this.restartBtn, 'MAIN MENU');
         this.restartBtn.style.top = '65%';
         
         styleButton(this.restartRoundBtn, 'RESTART FROM ROUND X');
         this.restartRoundBtn.style.top = '75%';
 
-        this.restartBtn.onclick = () => this.resetGame(true);
+        this.restartBtn.onclick = () => location.reload();
         this.restartRoundBtn.onclick = () => this.resetGame(false);
     }
 
@@ -139,7 +155,13 @@ export class Game {
         this.restartBtn.style.display = 'none';
         this.restartRoundBtn.style.display = 'none';
         
-        this.player.health = 100;
+        // Reset health based on difficulty
+        let maxHP = 100;
+        if (this.difficulty === 'hurt-me-plenty') maxHP = 200;
+        else if (this.difficulty === 'too-young-to-die') maxHP = 500;
+        
+        this.player.health = maxHP;
+        this.player.maxHealth = maxHP;
         this.player.x = this.canvas.width / 2;
         this.player.y = this.canvas.height / 2;
         this.player.vx = 0;
@@ -154,11 +176,12 @@ export class Game {
         if (fromStart) {
             this.round = 0;
             this.kills = 0;
+            this.gameTime = 0;
             this.lastWormholeSpawn = -40000;
         } else {
             // Keep round and kills (but subtract 1 because the game loop will increment it immediately)
             this.round = Math.max(0, this.round - 1);
-            this.lastWormholeSpawn = performance.now() - 40000;
+            this.lastWormholeSpawn = this.gameTime - 40000;
         }
     }
 
@@ -175,10 +198,19 @@ export class Game {
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
         });
+
+        window.addEventListener('blur', () => {
+            this.paused = true;
+        });
+        window.addEventListener('focus', () => {
+            this.paused = false;
+        });
     }
 
-    update(deltaTime, currentTime) {
-        if (this.gameOver) return;
+    update(deltaTime) {
+        if (this.gameOver || this.paused) return;
+        this.gameTime += deltaTime;
+        const currentTime = this.gameTime;
         
         if (this.damageFlash > 0) {
             this.damageFlash -= deltaTime;
@@ -243,7 +275,7 @@ export class Game {
 
         // Health regen
         if (this.player.health < this.player.maxHealth && this.player.health > 0) {
-            this.player.health = Math.min(this.player.maxHealth, this.player.health + (1 * deltaTime / 1000));
+            this.player.health = Math.min(this.player.maxHealth, this.player.health + (this.player.regenSpeed * deltaTime / 1000));
         }
         if (this.player.health <= 0) {
             this.player.health = 0;
@@ -299,7 +331,14 @@ export class Game {
             if (isBossRound && !this.boss) {
                 this.boss = new Boss(this.canvas.width, this.canvas.height, currentTime);
             } else {
-                this.player.health = Math.min(this.player.maxHealth, this.player.health + 15);
+                // Round completion heal based on difficulty
+                if (this.difficulty === 'too-young-to-die') {
+                    this.player.health = this.player.maxHealth;
+                } else if (this.difficulty === 'hurt-me-plenty') {
+                    this.player.health += 30; // Can overflow
+                } else {
+                    this.player.health += 15; // Ultra-violence, can overflow
+                }
             }
 
             this.audio.playNewRound();
@@ -423,7 +462,15 @@ export class Game {
                 this.enemies = []; // Kill all other monsters
                 this.wormholes = []; // Clear active wormholes
                 this.boss = null;
-                this.player.health = 100;
+                
+                // Post-boss heal based on difficulty
+                if (this.difficulty === 'too-young-to-die') {
+                    this.player.health = this.player.maxHealth;
+                } else if (this.difficulty === 'hurt-me-plenty') {
+                    this.player.health = 230; // Boss-ok után 230-ra állítódik
+                } else {
+                    this.player.health = 100; // Ultra-violence
+                }
                 
                 // Trigger next round IMMEDIATELY
                 this.round++;
@@ -628,7 +675,7 @@ export class Game {
                     if (d < e.size/2 + 5) {
                         e.health -= 1;
                         if (b.ownerType === 'player') {
-                            e.lastTimeHitByPlayer = performance.now();
+                            e.lastTimeHitByPlayer = this.gameTime;
                         }
                         hit = true;
                         if (e.health <= 0) {
@@ -651,7 +698,7 @@ export class Game {
     }
 
     draw() {
-        const currentTime = performance.now();
+        const currentTime = this.gameTime;
         this.ctx.fillStyle = 'black';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -671,8 +718,8 @@ export class Game {
         this.ctx.fill();
         this.ctx.restore();
 
-        this.wormholes.forEach(wh => wh.draw(this.ctx, this.assets.spawn));
-        if (this.boss) this.boss.draw(this.ctx, performance.now(), this.assets);
+        this.wormholes.forEach(wh => wh.draw(this.ctx, this.assets.spawn, currentTime));
+        if (this.boss) this.boss.draw(this.ctx, this.gameTime, this.assets);
         
         // Draw Player Sprite
         const playerImg = this.player.shootVisualTimer > 0 ? this.assets.playerShoot : this.assets.playerIdle;
@@ -719,7 +766,7 @@ export class Game {
                 const radius = b.radius || 12;
                 if (b.isDetonating) {
                     // Flash black and white
-                    const flash = Math.floor((performance.now() / 50) % 2) === 0 ? 'white' : 'black';
+                    const flash = Math.floor((this.gameTime / 50) % 2) === 0 ? 'white' : 'black';
                     this.ctx.save();
                     this.ctx.translate(b.x, b.y);
                     // No rotation needed when stopped, or keep last
@@ -793,7 +840,7 @@ export class Game {
 
         const healthPercent = Math.min(1, Math.max(0, this.player.health / this.player.maxHealth));
         const fillGrad = this.ctx.createLinearGradient(hx, hy, hx, hy + barHeight);
-        if (this.player.health > 100) {
+        if (this.player.health > this.player.maxHealth) {
             // Gold/Shiny color for overheal
             fillGrad.addColorStop(0, '#f1c40f');
             fillGrad.addColorStop(1, '#f39c12');
@@ -845,6 +892,11 @@ export class Game {
             this.ctx.shadowBlur = 0;
             this.ctx.fillText(`KILLS: ${this.kills}`, this.canvas.width/2, this.canvas.height/2 + 30);
             this.ctx.fillText(`ROUND REACHED: ${this.round}`, this.canvas.width/2, this.canvas.height/2 + 75);
+            
+            // Show difficulty
+            this.ctx.font = 'bold 24px Courier New';
+            this.ctx.fillStyle = '#ff0000';
+            this.ctx.fillText(`DIFFICULTY: ${this.difficulty.toUpperCase().replace(/-/g, ' ')}`, this.canvas.width/2, this.canvas.height/2 + 120);
         }
 
         // Draw crosshair
@@ -856,6 +908,20 @@ export class Game {
                 24, 
                 24
             );
+        }
+
+        if (this.paused && !this.gameOver) {
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = 'bold 72px Courier New';
+            this.ctx.textAlign = 'center';
+            this.ctx.shadowBlur = 20;
+            this.ctx.shadowColor = 'white';
+            this.ctx.fillText('PAUSED', this.canvas.width / 2, this.canvas.height / 2);
+            this.ctx.shadowBlur = 0;
+            this.ctx.font = '24px Courier New';
+            this.ctx.fillText('Click anywhere to resume', this.canvas.width / 2, this.canvas.height / 2 + 50);
         }
 
         this.ctx.restore();

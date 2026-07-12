@@ -102,6 +102,86 @@
 
         h1 { color: #87CEEB; margin-top: 0; }
 
+        @font-face {
+            font-family: 'KnightWarrior';
+            src: url('./assets/KnightWarrior-w16n8.otf') format('opentype');
+        }
+
+        .difficulty-selection {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .difficulty-wrapper {
+            width: 350px;
+            margin: 30px auto 0;
+            padding: 20px;
+            background: rgba(135, 206, 235, 0.05);
+            border: 1px solid rgba(135, 206, 235, 0.2);
+            border-radius: 10px;
+        }
+
+        .difficulty-wrapper h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            color: #87CEEB;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .tutorial-box {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(135, 206, 235, 0.1);
+            border-left: 4px solid #87CEEB;
+            border-radius: 4px;
+            text-align: left;
+        }
+
+        .tutorial-box p {
+            margin: 0;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+
+        .section-title {
+            color: #87CEEB;
+            text-align: left;
+            font-size: 1.5rem;
+            margin: 20px 0 15px 0;
+            border-bottom: 1px solid rgba(135, 206, 235, 0.3);
+            padding-bottom: 5px;
+        }
+
+        .difficulty-option {
+            display: flex;
+            align-items: center;
+            color: #ff0000;
+            font-family: 'KnightWarrior', serif;
+            font-size: 2.5rem;
+            cursor: pointer;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+            user-select: none;
+        }
+
+        .difficulty-option.selected {
+            opacity: 1;
+        }
+
+        .difficulty-option img.select-icon {
+            width: 1.5rem;
+            margin-right: 1rem;
+            display: none;
+        }
+
+        .difficulty-option.selected img.select-icon {
+            display: block;
+        }
+
         @keyframes rotate {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -117,6 +197,12 @@
         <div class="modal-content">
             <h1>SWARM</h1>
             
+            <div class="tutorial-box">
+                <p><strong>Bevetés:</strong> Irányítsd a karaktered a <strong>WASD</strong> billentyűkkel, és tüzelj a <strong>bal egérgombbal</strong> az ellenséges hordákra. Éld túl a lankadatlan hullámokat, és tarts ki, ameddig csak bírsz a végtelen pokolban!</p>
+            </div>
+
+            <div class="section-title">Ellenfelek</div>
+
             <div class="enemy-info">
                 <div class="enemy-preview">
                     <img src="assets/BasicMelee.png" alt="Basic Melee">
@@ -157,7 +243,7 @@
                 </div>
                 <div class="enemy-details">
                     <h3>SkyPulse</h3>
-                    <p>Repülő egység. Homing rakétákat lő, amik hatalmasat robbannak - a robbanások minimálisan a többi szörnyet is sebzik. Átrepül más egységek felett mint az egység, mind a lövedéke. Távolságot tart a játékostól, és lövedék-kerülő</p>
+                    <p>Repülő egység. Homing rakétákat lő, amik hatalmasat robbannak - a robbanások minimálisan a többi szörnyet is sebzik. Átrepül más egységek felett mind az egység, mind a lövedéke. Távolságot tart a játékostól, és lövedék-kerülő</p>
                 </div>
             </div>
 
@@ -185,16 +271,65 @@
                 </div>
             </div>
 
-            <button id="startBtn">JÁTÉK INDÍTÁSA</button>
+            <div class="difficulty-wrapper">
+                <h2>Válassz nehézséget</h2>
+                <div class="difficulty-selection">
+                    <div class="difficulty-option" data-difficulty="too-young-to-die">
+                        <img src="assets/select.png" class="select-icon" alt="Selected">
+                        <span>I'M TOO YOUNG TO DIE</span>
+                    </div>
+                    <div class="difficulty-option" data-difficulty="hurt-me-plenty">
+                        <img src="assets/select.png" class="select-icon" alt="Selected">
+                        <span>HURT ME PLENTY</span>
+                    </div>
+                    <div class="difficulty-option selected" data-difficulty="ultra-violence">
+                        <img src="assets/select.png" class="select-icon" alt="Selected">
+                        <span>ULTRA-VIOLENCE</span>
+                    </div>
+                </div>
+
+                <button id="startBtn">JÁTÉK INDÍTÁSA</button>
+            </div>
         </div>
     </div>
     <canvas id="gameCanvas"></canvas>
     <script type="module">
         import { Game } from "./Game.js";
+        import { AudioService } from "./AudioService.js";
 
         const canvas = document.getElementById("gameCanvas");
         const startModal = document.getElementById("startModal");
         const startBtn = document.getElementById("startBtn");
+        const difficultyOptions = document.querySelectorAll('.difficulty-option');
+        
+        const audio = new AudioService();
+        const selectionSound = new Audio('./assets/select.mp3');
+        selectionSound.volume = 1;
+
+        // Start menu ambience on first interaction
+        const startAmbience = () => {
+            audio.playMenuAmbience();
+            window.removeEventListener('click', startAmbience);
+            window.removeEventListener('keydown', startAmbience);
+        };
+        window.addEventListener('click', startAmbience);
+        window.addEventListener('keydown', startAmbience);
+        
+        let selectedDifficulty = 'ultra-violence';
+
+        difficultyOptions.forEach(opt => {
+            opt.onclick = () => {
+                if (selectedDifficulty === opt.dataset.difficulty) return;
+
+                difficultyOptions.forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                selectedDifficulty = opt.dataset.difficulty;
+                
+                // Play selection sound
+                selectionSound.currentTime = 0;
+                selectionSound.play().catch(e => console.log('Audio playback prevented:', e));
+            };
+        });
 
         const resizeCanvas = () => {
             canvas.width = window.innerWidth;
@@ -203,22 +338,23 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        let gameInstance = null;
+               let gameInstance = null;
         let animationFrameId = null;
 
         startBtn.onclick = () => {
+            audio.stopMenuAmbience();
             startModal.style.display = "none";
             document.body.style.cursor = "none";
             
             resizeCanvas();
             
-            gameInstance = new Game(canvas);
+            gameInstance = new Game(canvas, selectedDifficulty);
             
             function gameLoop(timestamp) {
                 const deltaTime = Math.min(64, timestamp - (gameLoop.lastTimestamp || timestamp));
                 gameLoop.lastTimestamp = timestamp;
 
-                gameInstance.update(deltaTime, performance.now());
+                gameInstance.update(deltaTime);
                 gameInstance.draw();
                 animationFrameId = requestAnimationFrame(gameLoop);
             }

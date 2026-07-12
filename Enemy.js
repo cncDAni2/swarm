@@ -63,7 +63,7 @@ export class Enemy {
         // Background red pulse for Rifleman
         if (this.type === 'rifleman') {
             const auraRadius = this.size;
-            const pulse = 0.8 + Math.sin(Date.now() / 100) * 0.2;
+            const pulse = 0.8 + Math.sin(currentTime / 100) * 0.2;
             const currentRadius = auraRadius * pulse;
             
             const grad = ctx.createRadialGradient(
@@ -102,7 +102,7 @@ export class Enemy {
         } else {
             // Fallback shapes...
             if (this.type === 'sky-pulse') {
-                const pulse = 0.8 + Math.sin(Date.now() / 200) * 0.2;
+                const pulse = 0.8 + Math.sin(currentTime / 200) * 0.2;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, (this.size / 2) * pulse, 0, Math.PI * 2);
                 ctx.fillStyle = 'blue';

@@ -80,14 +80,14 @@ export class Wormhole {
         return this.spawnCountTotal >= this.maxSpawns;
     }
 
-    draw(ctx, spawnImg) {
+    draw(ctx, spawnImg, currentTime) {
         ctx.save();
         
         if (spawnImg && spawnImg.complete) {
             ctx.save();
             ctx.translate(this.x, this.y);
             // Lassabb rotáció
-            ctx.rotate(Date.now() / 3000);
+            ctx.rotate(currentTime / 3000);
             ctx.globalAlpha = 0.7;
             ctx.drawImage(spawnImg, -this.radius, -this.radius, this.radius * 2, this.radius * 2);
             ctx.restore();
@@ -98,7 +98,7 @@ export class Wormhole {
             ctx.strokeStyle = 'yellow';
             ctx.lineWidth = 4;
             ctx.setLineDash([10, 5]);
-            ctx.lineDashOffset = -Date.now() / 50; 
+            ctx.lineDashOffset = -currentTime / 50; 
             ctx.stroke();
         }
         

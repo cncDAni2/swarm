@@ -8,12 +8,18 @@ export class AudioService {
             damaged: null,
             damagedHeavy: null,
             bossDamaged: null,
-            gameOver: null
+            gameOver: null,
+            menuAmbience: null
         };
         this.loadSounds();
     }
 
     loadSounds() {
+        // Preload menu ambience
+        this.sounds.menuAmbience = new Audio('./assets/menu-ambience.webm');
+        this.sounds.menuAmbience.loop = true;
+        this.sounds.menuAmbience.load();
+
         // Preload shoot-player-laser-1.mp3 and shoot-player-laser-2.mp3
         const laser1 = new Audio('./assets/shoot-player-laser-1.mp3');
         const laser2 = new Audio('./assets/shoot-player-laser-2.mp3');
@@ -83,6 +89,18 @@ export class AudioService {
 
     playEnemyPlasma() {
         this._playSound(this.sounds.enemyPlasma);
+    }
+
+    playMenuAmbience() {
+        this.sounds.menuAmbience.volume = 1.0;
+        this._playSound(this.sounds.menuAmbience);
+    }
+
+    stopMenuAmbience() {
+        if (this.sounds.menuAmbience) {
+            this.sounds.menuAmbience.pause();
+            this.sounds.menuAmbience.currentTime = 0;
+        }
     }
 
     stopAll() {
