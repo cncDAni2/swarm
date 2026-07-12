@@ -14,6 +14,11 @@ export class BasicRiflemanAI {
         this.burstInterval = 100; // 100ms between bullets in a burst
         this.isPredictiveBurst = false;
         this.lastBurstTime = 0;
+
+        // Evasion logic for projectiles
+        this.lastEvadeUpdateTime = 0;
+        this.playerBulletWalls = [];
+        this.evadeWalls = [];
     }
 
     update(player, enemies, bullets, currentTime, spawnBullet) {
@@ -33,6 +38,73 @@ export class BasicRiflemanAI {
             moveX = -(dx / distToPlayer) * this.speed;
             moveY = -(dy / distToPlayer) * this.speed;
         }
+
+        // --- Projectile Evasion ---
+        if (currentTime - this.lastEvadeUpdateTime > 200) {
+            this.playerBulletWalls = bullets ? bullets.filter(b => b.ownerType === 'player').map(b => ({ type: 'player-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy })) : [];
+            this.lastEvadeUpdateTime = currentTime;
+        }
+
+        const urgentWalls = [];
+        if (bullets) {
+            bullets.forEach(b => {
+                if (b.ownerType === 'boss-spiral') urgentWalls.push({ type: 'boss-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+                else if (b.ownerType === 'sky-pulse') urgentWalls.push({ type: 'plasma-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+            });
+        }
+        this.evadeWalls = [...this.playerBulletWalls, ...urgentWalls];
+
+        this.evadeWalls.forEach(w => {
+            const vbx = this.owner.x - w.x;
+            const vby = this.owner.y - w.y;
+            const vlen = Math.sqrt((w.vx || 0)**2 + (w.vy || 0)**2);
+            if (vlen === 0) return;
+            const bux = w.vx / vlen;
+            const buy = w.vy / vlen;
+            const proj = vbx * bux + vby * buy;
+
+            let range = 200;
+            let width = 25;
+
+            if (w.type === 'player-bullet') {
+                range = 2000;
+                width = 25;
+            } else if (w.type === 'boss-bullet' || w.type === 'plasma-bullet') {
+                range = w.type === 'boss-bullet' ? 90 : 100;
+                width = w.type === 'boss-bullet' ? 34 : 38;
+            }
+
+            if (proj > 0 && proj < range) {
+                const closestX = w.x + bux * proj;
+                const closestY = w.y + buy * proj;
+                const distToLineSq = (this.owner.x - closestX)**2 + (this.owner.y - closestY)**2;
+                if (distToLineSq < (width * width)) {
+                    const perpx = -buy;
+                    const perpy = bux;
+                    const side = (this.owner.x - w.x) * perpx + (this.owner.y - w.y) * perpy;
+                    const steerDir = side >= 0 ? 1 : -1;
+                    const force = w.type === 'plasma' || w.type === 'boss' ? 5.0 : 4.0;
+                    moveX += perpx * steerDir * force;
+                    moveY += perpy * steerDir * force;
+                }
+            }
+
+            // Sphere avoidance for lethal shells (Plasma & Boss Spiral)
+            if (w.type === 'plasma-bullet' || w.type === 'boss-bullet') {
+                const dx = this.owner.x - w.x;
+                const dy = this.owner.y - w.y;
+                const d2 = dx * dx + dy * dy;
+                const sphereRadius = width;
+                if (d2 < sphereRadius * sphereRadius) {
+                    const d = Math.sqrt(d2);
+                    if (d > 0) {
+                        const sForce = w.type === 'plasma-bullet' || w.type === 'boss-bullet' ? 6.0 : 4.0;
+                        moveX += (dx / d) * sForce;
+                        moveY += (dy / d) * sForce;
+                    }
+                }
+            }
+        });
 
         // 2. Separation (softened)
         const separationDist = 60;

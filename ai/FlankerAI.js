@@ -5,6 +5,7 @@ export class FlankerAI {
         this.behavior = Math.random() < 0.5 ? 'left' : 'right';
         this.state = 'flanking'; // 'flanking' or 'attacking'
         this.lastEvadeUpdateTime = 0;
+        this.playerBulletWalls = [];
         this.evadeWalls = [];
     }
 
@@ -64,34 +65,70 @@ export class FlankerAI {
             moveY = (tdy / tdist) * this.speed;
         }
 
-        // 4. Evasion Logic (Player Bullets - 1s snapshot)
-        if (bullets && currentTime - this.lastEvadeUpdateTime > 1000) {
-            this.evadeWalls = bullets
-                .filter(b => b.ownerType === 'player')
-                .map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy }));
+        // 4. Evasion Logic
+        // Snapshot player bullets every 0.2s
+        if (currentTime - this.lastEvadeUpdateTime > 200) {
+            this.playerBulletWalls = bullets ? bullets.filter(b => b.ownerType === 'player').map(b => ({ type: 'player-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy })) : [];
             this.lastEvadeUpdateTime = currentTime;
         }
+
+        // Boss & Plasma: Immediate every frame
+        const urgentWalls = [];
+        if (bullets) {
+            bullets.forEach(b => {
+                if (b.ownerType === 'boss-spiral') urgentWalls.push({ type: 'boss-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+                else if (b.ownerType === 'sky-pulse') urgentWalls.push({ type: 'plasma-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+            });
+        }
+        this.evadeWalls = [...this.playerBulletWalls, ...urgentWalls];
 
         this.evadeWalls.forEach(w => {
             const vbx = this.owner.x - w.x;
             const vby = this.owner.y - w.y;
-            const vlen = Math.sqrt(w.vx * w.vx + w.vy * w.vy);
+            const vlen = Math.sqrt((w.vx || 0)**2 + (w.vy || 0)**2);
             if (vlen === 0) return;
             const bux = w.vx / vlen;
             const buy = w.vy / vlen;
             const proj = vbx * bux + vby * buy;
 
-            if (proj > 0 && proj < 200) {
+            let range = 200;
+            let width = 25;
+
+            if (w.type === 'player-bullet') {
+                range = 2000;
+                width = 25;
+            } else if (w.type === 'boss-bullet' || w.type === 'plasma-bullet') {
+                range = w.type === 'boss-bullet' ? 90 : 100;
+                width = w.type === 'boss-bullet' ? 34 : 38;
+            }
+
+            if (proj > 0 && proj < range) {
                 const closestX = w.x + bux * proj;
                 const closestY = w.y + buy * proj;
                 const distToLineSq = (this.owner.x - closestX)**2 + (this.owner.y - closestY)**2;
-                if (distToLineSq < 2500) { 
+                if (distToLineSq < (width * width)) { 
                     const perpx = -buy;
                     const perpy = bux;
                     const side = (this.owner.x - w.x) * perpx + (this.owner.y - w.y) * perpy;
                     const steerDir = side >= 0 ? 1 : -1;
-                    moveX += perpx * steerDir * 2.0;
-                    moveY += perpy * steerDir * 2.0;
+                    const force = w.type === 'boss' || w.type === 'plasma' ? 5.0 : 2.0;
+                    moveX += perpx * steerDir * force;
+                    moveY += perpy * steerDir * force;
+                }
+            }
+
+            // Sphere avoidance for lethal shells (Plasma & Boss Spiral)
+            if (w.type === 'plasma-bullet' || w.type === 'boss-bullet') {
+                const dx = this.owner.x - w.x;
+                const dy = this.owner.y - w.y;
+                const d2 = dx * dx + dy * dy;
+                const sphereRadius = width;
+                if (d2 < sphereRadius * sphereRadius) {
+                    const d = Math.sqrt(d2);
+                    if (d > 0) {
+                        moveX += (dx / d) * 5.0;
+                        moveY += (dy / d) * 5.0;
+                    }
                 }
             }
         });
@@ -109,11 +146,17 @@ export class FlankerAI {
             }
         });
 
-        // 6. Apply
-        const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
-        if (finalMoveDist > 0) {
-            this.owner.x += (moveX / finalMoveDist) * this.speed;
-            this.owner.y += (moveY / finalMoveDist) * this.speed;
+        // 6. Apply with speed limit
+        const finalMoveX = moveX;
+        const finalMoveY = moveY;
+        const finalMoveDist = Math.sqrt(finalMoveX * finalMoveX + finalMoveY * finalMoveY);
+        
+        if (finalMoveDist > this.speed) {
+            this.owner.x += (finalMoveX / finalMoveDist) * this.speed;
+            this.owner.y += (finalMoveY / finalMoveDist) * this.speed;
+        } else {
+            this.owner.x += finalMoveX;
+            this.owner.y += finalMoveY;
         }
     }
 }

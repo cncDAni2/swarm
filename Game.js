@@ -90,6 +90,8 @@ export class Game {
         this.assets.boss2Closed.src = './assets/boss-2-eye-closed.png';
         this.assets.spawn = new Image();
         this.assets.spawn.src = './assets/spawn.png';
+        this.assets.splashDamage = new Image();
+        this.assets.splashDamage.src = './assets/splash-damage.png';
         
         this.crosshairImg = new Image();
         this.crosshairImg.src = './assets/chosshair.png';
@@ -106,6 +108,7 @@ export class Game {
         
         this.damageFlash = 0;
         this.damageResistTimer = 0;
+        this.damageSplashes = [];
         this.playedDamageLow = false;
         this.playedDamageHeavy = false;
         
@@ -474,17 +477,29 @@ export class Game {
             if (wh.isFinished()) this.wormholes.splice(i, 1);
         }
 
-        // Boss Impassability for Enemies
+        // Boss Impassability for Enemies (Increased range)
         if (this.boss) {
             this.enemies.forEach(enemy => {
                 const dxB = enemy.x - this.boss.x;
                 const dyB = enemy.y - this.boss.y;
                 const distB = Math.sqrt(dxB * dxB + dyB * dyB);
-                const minDistB = enemy.size / 2 + this.boss.size / 2 - 5;
-                if (distB < minDistB) {
+                
+                // Ground units avoid Boss from further away (240 units)
+                // Sky-Pulse units fly above, but still respect a smaller collision buffer
+                const behaviorDist = enemy.type === 'sky-pulse' ? (enemy.size / 2 + this.boss.size / 2 - 5) : 240;
+                
+                if (distB < behaviorDist) {
                     const angle = Math.atan2(dyB, dxB);
-                    enemy.x = this.boss.x + Math.cos(angle) * minDistB;
-                    enemy.y = this.boss.y + Math.sin(angle) * minDistB;
+                    if (enemy.type === 'sky-pulse') {
+                        // Hard push for flyer collision
+                        enemy.x = this.boss.x + Math.cos(angle) * behaviorDist;
+                        enemy.y = this.boss.y + Math.sin(angle) * behaviorDist;
+                    } else {
+                        // Soft push/steering for ground units to keep them away
+                        const force = (behaviorDist - distB) * 0.1;
+                        enemy.x += Math.cos(angle) * force;
+                        enemy.y += Math.sin(angle) * force;
+                    }
                 }
             });
         }
@@ -729,13 +744,9 @@ export class Game {
 
             // Boss Spiral logic (Linear expansion for the stream)
             if (b.ownerType === 'boss-spiral') {
-                // Remove spiralStep rotation to keep the circular pattern clean as requested
                 const baseSpeed = 1.5;
-                b.x += Math.cos(b.spiralAngle) * baseSpeed;
-                b.y += Math.sin(b.spiralAngle) * baseSpeed;
-                // Avoid double-applying velocity
-                b.vx = 0;
-                b.vy = 0;
+                b.vx = Math.cos(b.spiralAngle) * baseSpeed;
+                b.vy = Math.sin(b.spiralAngle) * baseSpeed;
             }
 
             b.x += b.vx;
@@ -792,6 +803,14 @@ export class Game {
                     if (!isBossInitialImmune && !this.boss.isInvulnerable) {
                         this.boss.health -= (b.damage || 1);
                         this.explosions.push({x: b.x, y: b.y, life: 0.5, decay: 0.1, maxRadius: 20});
+                        this.damageSplashes.push({ 
+                            x: b.x, 
+                            y: b.y, 
+                            target: this.boss,
+                            offsetX: b.x - this.boss.x,
+                            offsetY: b.y - this.boss.y,
+                            createdAt: currentTime 
+                        });
                     }
                     hit = true; // Bullet disappears on hit even if immortal
                 }
@@ -813,6 +832,14 @@ export class Game {
                         e.health -= (b.damage || 1);
                         if (b.ownerType === 'player') {
                             e.lastTimeHitByPlayer = this.gameTime;
+                            this.damageSplashes.push({ 
+                                x: b.x, 
+                                y: b.y, 
+                                target: e,
+                                offsetX: b.x - e.x,
+                                offsetY: b.y - e.y,
+                                createdAt: currentTime 
+                            });
                         }
                         hit = true;
                         if (e.health <= 0) {
@@ -834,6 +861,13 @@ export class Game {
         for (let i = this.explosions.length - 1; i >= 0; i--) {
             this.explosions[i].life -= this.explosions[i].decay;
             if (this.explosions[i].life <= 0) this.explosions.splice(i, 1);
+        }
+
+        // Damage Splashes cleanup (100ms lifetime)
+        for (let i = this.damageSplashes.length - 1; i >= 0; i--) {
+            if (currentTime - this.damageSplashes[i].createdAt > 100) {
+                this.damageSplashes.splice(i, 1);
+            }
         }
 
         // Re-evaluate pairings if ground unit counts changed
@@ -925,6 +959,45 @@ export class Game {
         return clipLine(x1, y1, x2, y2, rx, ry, rw, rh);
     }
 
+    drawEvasionDebug() {
+        return; // Disable debug drawing for now
+        this.ctx.save();
+        this.enemies.forEach(enemy => {
+            if (!enemy.ai || !enemy.ai.evadeWalls) return;
+            
+            enemy.ai.evadeWalls.forEach(w => {
+                const vlen = Math.sqrt((w.vx || 0) ** 2 + (w.vy || 0) ** 2);
+                if (vlen === 0) return;
+                const bux = (w.vx || 0) / vlen;
+                const buy = (w.vy || 0) / vlen;
+                
+                let range = 200;
+                let width = 50;
+                if (w.type === 'player-bullet') { range = 2000; width = 25; }
+                if (w.type === 'boss-bullet') { range = 90; width = 34; }
+                if (w.type === 'plasma-bullet') { range = 100; width = 38; }
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(w.x, w.y);
+                this.ctx.lineTo(w.x + bux * range, w.y + buy * range);
+                this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
+                this.ctx.lineWidth = width;
+                this.ctx.stroke();
+
+                // Draw sphere avoidance bubble for lethal bullets
+                if (w.type === 'plasma-bullet' || w.type === 'boss-bullet') {
+                    this.ctx.beginPath();
+                    // radius is width (which is the steer half-width)
+                    this.ctx.arc(w.x, w.y, width, 0, Math.PI * 2);
+                    this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)'; 
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+                }
+            });
+        });
+        this.ctx.restore();
+    }
+
     lineLineIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
         const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
         if (den === 0) return null;
@@ -971,6 +1044,8 @@ export class Game {
             this.ctx.strokeRect(wall.x - wall.size/2 + 7.5, wall.y - wall.size/2 + 7.5, wall.size - 15, wall.size - 15);
             this.ctx.restore();
         });
+
+        this.drawEvasionDebug();
 
         this.wormholes.forEach(wh => wh.draw(this.ctx, this.assets.spawn, currentTime));
         if (this.boss) this.boss.draw(this.ctx, this.gameTime, this.assets);
@@ -1124,6 +1199,32 @@ export class Game {
                 }
             }
         });
+
+        // Damage Splashes
+        this.ctx.save();
+        this.damageSplashes.forEach(s => {
+            let drawX = s.x;
+            let drawY = s.y;
+
+            // Follow target if still alive
+            if (s.target && (this.enemies.includes(s.target) || s.target === this.boss)) {
+                drawX = s.target.x + s.offsetX;
+                drawY = s.target.y + s.offsetY;
+                // Update s.x/y so it stays here if target dies next frame
+                s.x = drawX;
+                s.y = drawY;
+            }
+
+            const size = 32; // Small size as requested
+            this.ctx.drawImage(
+                this.assets.splashDamage,
+                drawX - size / 2,
+                drawY - size / 2,
+                size,
+                size
+            );
+        });
+        this.ctx.restore();
 
         this.drawUI();
     }

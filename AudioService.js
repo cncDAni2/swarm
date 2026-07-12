@@ -12,7 +12,8 @@ export class AudioService {
             spawn: null,
             menuAmbience: null,
             reviAttack: null,
-            reviShoot: null
+            reviShoot: null,
+            bossShootCannon: null
         };
         this.loadSounds();
     }
@@ -74,6 +75,11 @@ export class AudioService {
         // Revi shoot sound
         this.sounds.reviShoot = new Audio('./assets/revi-shoot.mp3');
         this.sounds.reviShoot.load();
+
+        // Boss cannon sound
+        this.sounds.bossShootCannon = new Audio('./assets/boss-shoot-cannon.mp3');
+        this.sounds.bossShootCannon.volume = 0.66;
+        this.sounds.bossShootCannon.load();
     }
 
     playNewRound() {
@@ -82,11 +88,15 @@ export class AudioService {
     }
 
     playReviAttack() {
-        this._playSound(this.sounds.reviAttack);
+        this._playSound(this.sounds.reviAttack, true);
     }
 
     playReviShoot() {
-        this._playSound(this.sounds.reviShoot);
+        this._playSound(this.sounds.reviShoot, true);
+    }
+
+    playBossShootCannon() {
+        this._playSound(this.sounds.bossShootCannon, true);
     }
 
     playDamaged() {
@@ -112,19 +122,19 @@ export class AudioService {
     playRandomShoot() {
         // 80% chance for laser 1, 20% for laser 2
         const sound = Math.random() < 0.8 ? this.sounds.shoot[0] : this.sounds.shoot[1];
-        this._playSound(sound);
+        this._playSound(sound, true);
     }
 
     playStrongShoot() {
-        this._playSound(this.sounds.shootStrong);
+        this._playSound(this.sounds.shootStrong, true);
     }
 
     playEnemyShoot() {
-        this._playSound(this.sounds.enemyShoot);
+        this._playSound(this.sounds.enemyShoot, true);
     }
 
     playEnemyPlasma() {
-        this._playSound(this.sounds.enemyPlasma);
+        this._playSound(this.sounds.enemyPlasma, true);
     }
 
     playMenuAmbience() {
@@ -153,9 +163,18 @@ export class AudioService {
         });
     }
 
-    _playSound(sound) {
+    _playSound(sound, overlap = false) {
         if (!sound) return;
         
+        if (overlap) {
+            const clone = sound.cloneNode();
+            clone.volume = sound.volume;
+            clone.play().catch(e => {
+                console.warn("Audio clone play failed:", e);
+            });
+            return;
+        }
+
         // Restart if already playing to allow rapid fire overlap
         if (!sound.paused) {
             sound.currentTime = 0;

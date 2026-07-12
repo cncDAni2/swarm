@@ -21,6 +21,7 @@ export class Boss {
         this.beamWarningDuration = 1000;
         this.beamAngles = [0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4];
         this.beamHasDealtDamage = false;
+        this.beamHasPlayedShootSound = false;
 
         // Ability 2: Circle Stream (54 balls, 1 every 100ms, 0 to 540 degrees)
         this.lastSpiralTime = currentTime + 2000;
@@ -91,6 +92,8 @@ export class Boss {
             this.isWarningBeam = true;
             this.beamStartTime = currentTime;
             this.beamHasDealtDamage = false;
+            this.beamHasPlayedShootSound = false;
+            if (audio) audio.playReviAttack();
         }
 
         if (this.isWarningBeam) {
@@ -99,11 +102,18 @@ export class Boss {
                 this.isWarningBeam = false;
                 this.lastBeamTime = currentTime;
                 this.beamCooldown = 10000 + Math.random() * 5000;
-            } else if (timeInEffect >= this.beamWarningDuration && !this.beamHasDealtDamage) {
-                // Check collision with player
-                if (this.checkBeamCollision(player)) {
-                    player.health -= 30;
-                    this.beamHasDealtDamage = true;
+            } else if (timeInEffect >= this.beamWarningDuration) {
+                if (!this.beamHasPlayedShootSound) {
+                    if (audio) audio.playReviShoot();
+                    this.beamHasPlayedShootSound = true;
+                }
+
+                if (!this.beamHasDealtDamage) {
+                    // Check collision with player
+                    if (this.checkBeamCollision(player)) {
+                        player.health -= 30;
+                        this.beamHasDealtDamage = true;
+                    }
                 }
             }
         }
@@ -126,6 +136,7 @@ export class Boss {
                         createdAt: currentTime,
                         source: this
                     });
+                    if (audio) audio.playBossShootCannon();
                     this.spiralStreamCount++;
                     this.lastSpiralStreamTime = currentTime;
                 }

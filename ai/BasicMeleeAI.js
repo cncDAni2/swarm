@@ -4,6 +4,7 @@ export class BasicMeleeAI {
         this.speed = 1.6;
         this.partner = null;
         this.lastEvadeUpdateTime = 0;
+        this.playerBulletWalls = [];
         this.evadeWalls = [];
     }
 
@@ -79,19 +80,24 @@ export class BasicMeleeAI {
             moveY = (tdy / tdist) * this.speed;
         }
 
-        // --- Evasion Logic (Firing Lines & Player Bullets) ---
-        // Player Bullets: Snapshot every 1s (Nerfed)
-        if (currentTime - this.lastEvadeUpdateTime > 1000) {
-            this.evadeWalls = [];
-            if (bullets) {
-                bullets.filter(b => b.ownerType === 'player').forEach(b => {
-                    this.evadeWalls.push({ type: 'bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
-                });
-            }
+        // --- Projectile Evasion ---
+        // Player Bullets: Snapshot every 0.2s
+        if (currentTime - this.lastEvadeUpdateTime > 200) {
+            this.playerBulletWalls = bullets ? bullets.filter(b => b.ownerType === 'player').map(b => ({ type: 'player-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy })) : [];
             this.lastEvadeUpdateTime = currentTime;
         }
 
-        // Firing Lines: Real-time update (Immediately reactive)
+        // Boss & Plasma: Immediate every frame
+        const urgentWalls = [];
+        if (bullets) {
+            bullets.forEach(b => {
+                if (b.ownerType === 'boss-spiral') urgentWalls.push({ type: 'boss-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+                else if (b.ownerType === 'sky-pulse') urgentWalls.push({ type: 'plasma-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
+            });
+        }
+        this.evadeWalls = [...this.playerBulletWalls, ...urgentWalls];
+
+        // Firing Lines: Real-time update
         const activeFiringLines = [];
         riflemen.forEach(r => {
             if (r.ai && r.ai.currentFiringLine) {
@@ -99,17 +105,29 @@ export class BasicMeleeAI {
             }
         });
 
-        // Apply Evasion Forces
+        // Apply Forces
         [...this.evadeWalls, ...activeFiringLines].forEach(w => {
             const vbx = this.owner.x - w.x;
             const vby = this.owner.y - w.y;
-            const vlen = Math.sqrt(w.vx * w.vx + w.vy * w.vy);
+            const vlen = Math.sqrt((w.vx || 0)**2 + (w.vy || 0)**2);
             if (vlen === 0) return;
             const bux = w.vx / vlen;
             const buy = w.vy / vlen;
             const proj = vbx * bux + vby * buy;
-            const range = w.type === 'firingLine' ? w.dist : 200;
-            const width = w.type === 'firingLine' ? 40 : 50;
+            
+            let range = 200;
+            let width = 50;
+            let force = 2.0;
+
+            if (w.type === 'firingLine') {
+                range = w.dist; width = 40; force = 2.5;
+            } else if (w.type === 'player-bullet') {
+                range = 2000; width = 25; force = 2.0;
+            } else if (w.type === 'boss-bullet') {
+                range = 90; width = 34; force = 4.0;
+            } else if (w.type === 'plasma-bullet') {
+                range = 100; width = 38; force = 5.0; 
+            }
 
             if (proj > 0 && proj < range) {
                 const closestX = w.x + bux * proj;
@@ -120,15 +138,29 @@ export class BasicMeleeAI {
                     const perpy = bux;
                     const side = (this.owner.x - w.x) * perpx + (this.owner.y - w.y) * perpy;
                     const steerDir = side >= 0 ? 1 : -1;
-                    const force = w.type === 'firingLine' ? 2.5 : 2.0;
                     moveX += perpx * steerDir * force;
                     moveY += perpy * steerDir * force;
+                }
+            }
+            
+            // Sphere avoidance for lethal shells (Plasma & Boss Spiral)
+            if (w.type === 'plasma-bullet' || w.type === 'boss-bullet') {
+                const dx = this.owner.x - w.x;
+                const dy = this.owner.y - w.y;
+                const d2 = dx * dx + dy * dy;
+                const sphereRadius = width; 
+                if (d2 < sphereRadius * sphereRadius) {
+                    const d = Math.sqrt(d2);
+                    if (d > 0) {
+                        moveX += (dx / d) * force * 1.5;
+                        moveY += (dy / d) * force * 1.5;
+                    }
                 }
             }
         });
 
         // Final normalization
-        const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
+        let finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
         if (finalMoveDist > 0) {
             moveX = (moveX / finalMoveDist) * this.speed;
             moveY = (moveY / finalMoveDist) * this.speed;
@@ -150,7 +182,16 @@ export class BasicMeleeAI {
             }
         });
 
-        this.owner.x += moveX + separationX;
-        this.owner.y += moveY + separationY;
+        // Combined movement check to never exceed speed
+        let combinedX = moveX + separationX;
+        let combinedY = moveY + separationY;
+        const totalDist = Math.sqrt(combinedX * combinedX + combinedY * combinedY);
+        if (totalDist > this.speed) {
+            combinedX = (combinedX / totalDist) * this.speed;
+            combinedY = (combinedY / totalDist) * this.speed;
+        }
+
+        this.owner.x += combinedX;
+        this.owner.y += combinedY;
     }
 }
