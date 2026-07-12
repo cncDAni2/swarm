@@ -55,10 +55,16 @@ export class Game {
         this.assets.rifleman.src = './assets/Rifle.png';
         this.assets.flanker.src = './assets/flanker.png';
         this.assets.skyPulse.src = './assets/skypulse.png';
+        this.assets.boss = new Image();
         this.assets.boss.src = './assets/boss-1.png';
+        this.assets.bossClosed = new Image();
         this.assets.bossClosed.src = './assets/boss-1-eye-closed.png';
+        this.assets.boss2 = new Image();
+        this.assets.boss2.src = './assets/boss-2.png';
+        this.assets.boss2Closed = new Image();
+        this.assets.boss2Closed.src = './assets/boss-2-eye-closed.png';
         this.assets.spawn = new Image();
-        this.assets.spawn.src = './assets/spawn.jpg';
+        this.assets.spawn.src = './assets/spawn.png';
         
         this.crosshairImg = new Image();
         this.crosshairImg.src = './assets/chosshair.png';
@@ -79,6 +85,81 @@ export class Game {
         this.playedDamageHeavy = false;
         
         this.setupEventListeners();
+        this.setupUI();
+    }
+
+    setupUI() {
+        this.restartBtn = document.createElement('button');
+        this.restartRoundBtn = document.createElement('button');
+        
+        const styleButton = (btn, text) => {
+            btn.innerText = text;
+            btn.style.position = 'absolute';
+            btn.style.left = '50%';
+            btn.style.transform = 'translateX(-50%)';
+            btn.style.padding = '15px 30px';
+            btn.style.fontSize = '20px';
+            btn.style.fontFamily = 'Courier New';
+            btn.style.fontWeight = 'bold';
+            btn.style.backgroundColor = '#1a1a1a';
+            btn.style.color = '#87CEEB';
+            btn.style.border = '2px solid #87CEEB';
+            btn.style.cursor = 'pointer';
+            btn.style.display = 'none';
+            btn.style.zIndex = '1000';
+            btn.style.transition = 'all 0.2s';
+            btn.style.boxShadow = '0 0 10px rgba(135, 206, 235, 0.3)';
+            
+            btn.onmouseover = () => {
+                btn.style.backgroundColor = '#87CEEB';
+                btn.style.color = '#1a1a1a';
+                btn.style.boxShadow = '0 0 20px rgba(135, 206, 235, 0.6)';
+            };
+            btn.onmouseout = () => {
+                btn.style.backgroundColor = '#1a1a1a';
+                btn.style.color = '#87CEEB';
+                btn.style.boxShadow = '0 0 10px rgba(135, 206, 235, 0.3)';
+            };
+            document.body.appendChild(btn);
+        };
+
+        styleButton(this.restartBtn, 'RESTART FROM START');
+        this.restartBtn.style.top = '65%';
+        
+        styleButton(this.restartRoundBtn, 'RESTART FROM ROUND X');
+        this.restartRoundBtn.style.top = '75%';
+
+        this.restartBtn.onclick = () => this.resetGame(true);
+        this.restartRoundBtn.onclick = () => this.resetGame(false);
+    }
+
+    resetGame(fromStart) {
+        this.audio.stopAll();
+        this.gameOver = false;
+        this.restartBtn.style.display = 'none';
+        this.restartRoundBtn.style.display = 'none';
+        
+        this.player.health = 100;
+        this.player.x = this.canvas.width / 2;
+        this.player.y = this.canvas.height / 2;
+        this.player.vx = 0;
+        this.player.vy = 0;
+        
+        this.enemies = [];
+        this.bullets = [];
+        this.explosions = [];
+        this.wormholes = [];
+        this.boss = null;
+        
+        if (fromStart) {
+            this.round = 0;
+            this.kills = 0;
+            this.lastWormholeSpawn = -40000;
+        } else {
+            // Keep round and kills (but subtract 1 because the game loop will increment it immediately)
+            this.round = Math.max(0, this.round - 1);
+            this.lastWormholeSpawn = performance.now() - 40000;
+        }
     }
 
     setupEventListeners() {
@@ -93,10 +174,6 @@ export class Game {
         window.addEventListener('mousemove', e => {
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
-        });
-        window.addEventListener('resize', () => {
-            this.canvas.width = window.innerWidth;
-            this.canvas.height = window.innerHeight;
         });
     }
 
@@ -172,6 +249,9 @@ export class Game {
             this.player.health = 0;
             if (!this.gameOver) {
                 this.audio.playGameOver();
+                this.restartBtn.style.display = 'block';
+                this.restartRoundBtn.style.display = 'block';
+                this.restartRoundBtn.innerText = `RESTART FROM ROUND ${this.round}`;
             }
             this.gameOver = true;
         }
@@ -206,7 +286,9 @@ export class Game {
         }
 
         // Wormholes / Boss Spawn / Round Logic
-        if (currentTime - this.lastWormholeSpawn >= this.wormholeInterval) {
+        const canStartNextRound = !this.boss && (currentTime - this.lastWormholeSpawn >= this.wormholeInterval);
+        
+        if (canStartNextRound) {
             this.round++;
             this.roundDisplayTimer = currentTime;
             this.lastWormholeSpawn = currentTime;
@@ -332,13 +414,14 @@ export class Game {
 
         // Enemies
         if (this.boss) {
-            this.boss.update(this.player, this.enemies, this.bullets, currentTime, deltaTime, (b) => {
+            this.boss.update(this.player, this.enemies, this.bullets, currentTime, deltaTime, this.audio, (b) => {
                 this.bullets.push(b);
                 this.audio.playEnemyShoot();
             }, () => {
                 // Boss Death Callback
                 this.kills += 10; // Extra kills for boss
                 this.enemies = []; // Kill all other monsters
+                this.wormholes = []; // Clear active wormholes
                 this.boss = null;
                 this.player.health = 100;
                 
@@ -454,7 +537,7 @@ export class Game {
                 const dy = this.player.y - b.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 0) {
-                    const homingSpeed = 3.66; // Adjusted speed for homing bullets
+                    const homingSpeed = 2.5; // Adjusted speed for homing bullets
                     b.vx = (dx / dist) * homingSpeed;
                     b.vy = (dy / dist) * homingSpeed;
                 }
@@ -517,13 +600,12 @@ export class Game {
             }
             
             if (!hit && this.boss && b.ownerType === 'player') {
-                // Boss is immortal until wormholes start spawning enemies (activeDelay is 5000ms)
-                const isBossVulnerable = this.wormholes.length > 0 && 
-                                       (performance.now() - this.wormholes[0].startTime >= 5000);
-                
                 const distToBoss = Math.sqrt((b.x - this.boss.x)**2 + (b.y - this.boss.y)**2);
                 if (distToBoss < this.boss.size / 2) {
-                    if (isBossVulnerable) {
+                    // Boss is immortal until wormholes start spawning enemies (activeDelay is 5000ms) OR if in phase transition
+                    const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
+                    
+                    if (!isBossInitialImmune && !this.boss.isInvulnerable) {
                         this.boss.health -= 1;
                         this.explosions.push({x: b.x, y: b.y, life: 0.5, decay: 0.1, maxRadius: 20});
                     }
@@ -763,10 +845,6 @@ export class Game {
             this.ctx.shadowBlur = 0;
             this.ctx.fillText(`KILLS: ${this.kills}`, this.canvas.width/2, this.canvas.height/2 + 30);
             this.ctx.fillText(`ROUND REACHED: ${this.round}`, this.canvas.width/2, this.canvas.height/2 + 75);
-
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '20px Courier New';
-            this.ctx.fillText('Press F5 to restart', this.canvas.width/2, this.canvas.height/2 + 130);
         }
 
         // Draw crosshair

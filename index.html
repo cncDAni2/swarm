@@ -27,12 +27,15 @@
             border-radius: 15px;
             border: 2px solid #87CEEB;
             max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
             box-shadow: 0 0 30px rgba(135, 206, 235, 0.3);
             text-align: center;
         }
 
         .enemy-info {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             margin-bottom: 20px;
             text-align: left;
@@ -45,16 +48,30 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            text-align: center;
             margin-right: 20px;
             min-width: 80px;
+            background: black;
+            padding-top: 6px;
+            flex-shrink: 0;
+        }
+
+        .enemy-details {
+            flex: 1;
+            min-width: 250px;
         }
 
         .enemy-preview img {
             width: 64px;
             height: 64px;
-            background: #000;
             border-radius: 4px;
             margin-bottom: 5px;
+            display: block;
+        }
+
+        .enemy-preview img.rotating {
+            background: transparent;
+            border-radius: 50%;
         }
 
         .stats {
@@ -84,6 +101,15 @@
         }
 
         h1 { color: #87CEEB; margin-top: 0; }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .rotating {
+            animation: rotate 15s linear infinite;
+            transform-origin: center center;
+        }
     </style>
 </head>
 <body>
@@ -137,11 +163,25 @@
 
             <div class="enemy-info">
                 <div class="enemy-preview">
-                    <img src="assets/spawn.jpg" alt="Spawn Point">
+                    <img src="assets/boss-1.png" alt="Boss">
+                    <div class="stats">❤️ 100 <br>⚔️ 30, 15</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>Anomaly Core (Boss)</h3>
+                    <p>A játék főellensége. Folyamatosan éleszt szörnyeket. Két fázissal rendelkezik, 50% HP-nál alakot vált, rengeteg szörny jön ki belőle és időlegesen sérthetetlenné válik.<br>
+                        Két támadása van: <br>
+                        <strong>Phase Beams:</strong> 8 irányú pusztító sugárnyaláb (30 sebzés).<br>
+                        <strong>Spiral Stream:</strong> Folyamatos lövedékáradat forgó mintázatban (15 sebzés).</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/spawn.png" alt="Spawn Point" class="rotating">
                 </div>
                 <div class="enemy-details">
                     <h3>Wormhole</h3>
-                    <p>Téridő anomália, ahonnan az ellenséges hullámok érkeznek. Pár másodperccel a megjelenése után aktiválódik. Minden körben két portál nyitódik.</p>
+                    <p>Téridő anomália, ahonnan az ellenséges hullámok érkeznek. Pár másodperccel a megjelenése után aktiválódik. Az érkező szörnyek egy ideig sérthetetlenek. Minden körben két portál nyitódik.</p>
                 </div>
             </div>
 
@@ -156,8 +196,12 @@
         const startModal = document.getElementById("startModal");
         const startBtn = document.getElementById("startBtn");
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        const resizeCanvas = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
         let gameInstance = null;
         let animationFrameId = null;
@@ -165,10 +209,13 @@
         startBtn.onclick = () => {
             startModal.style.display = "none";
             document.body.style.cursor = "none";
+            
+            resizeCanvas();
+            
             gameInstance = new Game(canvas);
             
             function gameLoop(timestamp) {
-                const deltaTime = timestamp - (gameLoop.lastTimestamp || timestamp);
+                const deltaTime = Math.min(64, timestamp - (gameLoop.lastTimestamp || timestamp));
                 gameLoop.lastTimestamp = timestamp;
 
                 gameInstance.update(deltaTime, performance.now());

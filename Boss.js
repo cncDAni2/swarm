@@ -34,9 +34,39 @@ export class Boss {
         this.blinkTimer = 0;
         this.isBlinking = false;
         this.nextBlinkTime = currentTime + 2000 + Math.random() * 3000;
+
+        // Phase 2 / Invulnerability logic
+        this.isInvulnerable = false;
+        this.invulnerableTimer = 0;
+        this.phase2Triggered = false;
+        this.rapidSpawnTimer = 0;
     }
 
-    update(player, enemies, bullets, currentTime, deltaTime, spawnBullet, onBossDeath) {
+    update(player, enemies, bullets, currentTime, deltaTime, audio, spawnBullet, onBossDeath) {
+        // Handle Invulnerability
+        if (this.isInvulnerable) {
+            this.invulnerableTimer -= deltaTime;
+            if (this.invulnerableTimer <= 0) {
+                this.isInvulnerable = false;
+            }
+
+            // Rapid spawning every 200ms during invulnerability
+            this.rapidSpawnTimer -= deltaTime;
+            if (this.rapidSpawnTimer <= 0) {
+                this.spawnMinion(enemies);
+                this.rapidSpawnTimer = 200;
+            }
+        }
+
+        // Trigger Phase 2 at 50% HP
+        if (!this.phase2Triggered && this.health <= this.maxHealth * 0.5) {
+            this.phase2Triggered = true;
+            this.isInvulnerable = true;
+            this.invulnerableTimer = 5000;
+            this.rapidSpawnTimer = 200;
+            if (audio) audio.playBossDamaged();
+        }
+
         // Blink logic
         if (!this.isBlinking && currentTime >= this.nextBlinkTime) {
             this.isBlinking = true;
@@ -48,20 +78,8 @@ export class Boss {
         }
 
         // 1. Spawning enemies from 4 sides
-        if (currentTime - this.lastSpawnTime >= this.spawnCooldown) {
-            const sides = [
-                { x: this.x, y: this.y - this.size / 2 }, // Top
-                { x: this.x + this.size / 2, y: this.y }, // Right
-                { x: this.x, y: this.y + this.size / 2 }, // Bottom
-                { x: this.x - this.size / 2, y: this.y }  // Left
-            ];
-            const side = sides[Math.floor(Math.random() * sides.length)];
-            const types = ['melee', 'rifleman', 'flanker', 'sky-pulse'];
-            const type = types[Math.floor(Math.random() * types.length)];
-            
-            const newEnemy = new Enemy(side.x, side.y, type, 0); // Boss minions are immediately vulnerable
-            enemies.push(newEnemy);
-            
+        if (!this.isInvulnerable && currentTime - this.lastSpawnTime >= this.spawnCooldown) {
+            this.spawnMinion(enemies);
             this.lastSpawnTime = currentTime;
             this.spawnCooldown = 2000 + Math.random() * 2000;
         }
@@ -174,6 +192,19 @@ export class Boss {
             ctx.shadowBlur = 0;
         }
 
+        // Draw Invulnerability Shield (Yellow Circle)
+        if (this.isInvulnerable) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size / 2 + 20, 0, Math.PI * 2);
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 10;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = 'yellow';
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // Draw Boss Body
         const pulse = 1 + Math.sin(currentTime / 400) * 0.03; // Pulsing 3%
         const drawSize = this.size * pulse;
@@ -182,7 +213,13 @@ export class Boss {
         // Rotation removed as requested
         
         // Draw Sprite
-        const sprite = this.isBlinking ? assets.bossClosed : assets.boss;
+        let sprite;
+        if (this.phase2Triggered) {
+            sprite = this.isBlinking ? assets.boss2Closed : assets.boss2;
+        } else {
+            sprite = this.isBlinking ? assets.bossClosed : assets.boss;
+        }
+
         if (sprite && sprite.complete) {
             ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
         }
@@ -214,5 +251,20 @@ export class Boss {
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('ANOMALY CORE', this.x, by - 5);
+    }
+
+    spawnMinion(enemies) {
+        const sides = [
+            { x: this.x, y: this.y - this.size / 2 }, // Top
+            { x: this.x + this.size / 2, y: this.y }, // Right
+            { x: this.x, y: this.y + this.size / 2 }, // Bottom
+            { x: this.x - this.size / 2, y: this.y }  // Left
+        ];
+        const side = sides[Math.floor(Math.random() * sides.length)];
+        const types = ['melee', 'rifleman', 'flanker', 'sky-pulse'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        
+        const newEnemy = new Enemy(side.x, side.y, type, 0);
+        enemies.push(newEnemy);
     }
 }

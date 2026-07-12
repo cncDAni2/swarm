@@ -86,8 +86,8 @@ export class Wormhole {
         if (spawnImg && spawnImg.complete) {
             ctx.save();
             ctx.translate(this.x, this.y);
-            // Rotáló animáció a féregjáratnak
-            ctx.rotate(Date.now() / 1000);
+            // Lassabb rotáció
+            ctx.rotate(Date.now() / 3000);
             ctx.globalAlpha = 0.7;
             ctx.drawImage(spawnImg, -this.radius, -this.radius, this.radius * 2, this.radius * 2);
             ctx.restore();

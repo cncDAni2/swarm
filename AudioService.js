@@ -7,6 +7,7 @@ export class AudioService {
             newRound: [],
             damaged: null,
             damagedHeavy: null,
+            bossDamaged: null,
             gameOver: null
         };
         this.loadSounds();
@@ -41,6 +42,9 @@ export class AudioService {
         this.sounds.damagedHeavy = new Audio('./assets/damaged-heavy.mp3');
         this.sounds.damagedHeavy.load();
 
+        this.sounds.bossDamaged = new Audio('./assets/Boss damaged.mp3');
+        this.sounds.bossDamaged.load();
+
         // Game Over sound
         this.sounds.gameOver = new Audio('./assets/game-over.mp3');
         this.sounds.gameOver.load();
@@ -63,6 +67,10 @@ export class AudioService {
         this._playSound(this.sounds.gameOver);
     }
 
+    playBossDamaged() {
+        this._playSound(this.sounds.bossDamaged);
+    }
+
     playRandomShoot() {
         // 80% chance for laser 1, 20% for laser 2
         const sound = Math.random() < 0.8 ? this.sounds.shoot[0] : this.sounds.shoot[1];
@@ -75,6 +83,20 @@ export class AudioService {
 
     playEnemyPlasma() {
         this._playSound(this.sounds.enemyPlasma);
+    }
+
+    stopAll() {
+        Object.values(this.sounds).forEach(sound => {
+            if (Array.isArray(sound)) {
+                sound.forEach(s => {
+                    s.pause();
+                    s.currentTime = 0;
+                });
+            } else if (sound) {
+                sound.pause();
+                sound.currentTime = 0;
+            }
+        });
     }
 
     _playSound(sound) {
