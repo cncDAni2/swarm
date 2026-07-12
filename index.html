@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SWARM Game</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: black; display: flex; justify-content: center; align-items: center; cursor: default; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        canvas { display: block; }
+
+        #startModal {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: #1a1a1a;
+            padding: 40px;
+            border-radius: 15px;
+            border: 2px solid #87CEEB;
+            max-width: 800px;
+            box-shadow: 0 0 30px rgba(135, 206, 235, 0.3);
+            text-align: center;
+        }
+
+        .enemy-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            text-align: left;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .enemy-preview {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-right: 20px;
+            min-width: 80px;
+        }
+
+        .enemy-preview img {
+            width: 64px;
+            height: 64px;
+            background: #000;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+
+        .stats {
+            font-size: 1em;
+            white-space: nowrap;
+        }
+
+        .enemy-details h3 { margin: 0 0 5px 0; color: #87CEEB; }
+        .enemy-details p { margin: 0; font-size: 0.9em; opacity: 0.8; }
+
+        #startBtn {
+            margin-top: 30px;
+            padding: 15px 50px;
+            font-size: 1.5em;
+            background: #87CEEB;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        #startBtn:hover {
+            background: #b0e2ff;
+            transform: scale(1.05);
+        }
+
+        h1 { color: #87CEEB; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div id="startModal">
+        <div class="modal-content">
+            <h1>SWARM</h1>
+            
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/BasicMelee.png" alt="Basic Melee">
+                    <div class="stats">❤️ 5 ⚔️ 3</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>Melee Unit</h3>
+                    <p>Tank, közelharci egység. Falkákban támad, feladata megvédeni a Rifleman-okat.</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/Rifle.png" alt="Rifleman">
+                    <div class="stats">❤️ 1 ⚔️ 2x3</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>Rifleman</h3>
+                    <p>Közép-távolsági gépfegyveres lövész. Megáll tüzelni és képes burst módban leadni a lövéseket. Lövése lehet prediktív vagy normál. Képes társait is sebezni, de nem lő rá direktbe, és a társak utat fognak nyitni neki ha lő.</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/flanker.png" alt="Flanker">
+                    <div class="stats">❤️ 3 ⚔️ 3</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>Flanker</h3>
+                    <p>Közelharci egység, feladata elzárni az utadat, és oldalról támadni. Két csoportban támadnak. Lövedék-kerülő.</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/skypulse.png" alt="SkyPulse">
+                    <div class="stats">❤️ 3 ⚔️ 5</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>SkyPulse</h3>
+                    <p>Repülő egység. Homing rakétákat lő, amik hatalmasat robbannak - a robbanások minimálisan a többi szörnyet is sebzik. Átrepül más egységek felett mint az egység, mind a lövedéke. Távolságot tart a játékostól, és lövedék-kerülő</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
+                    <img src="assets/spawn.jpg" alt="Spawn Point">
+                </div>
+                <div class="enemy-details">
+                    <h3>Wormhole</h3>
+                    <p>Téridő anomália, ahonnan az ellenséges hullámok érkeznek. Pár másodperccel a megjelenése után aktiválódik. Minden körben két portál nyitódik.</p>
+                </div>
+            </div>
+
+            <button id="startBtn">JÁTÉK INDÍTÁSA</button>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <script type="module">
+        import { Game } from "./Game.js";
+
+        const canvas = document.getElementById("gameCanvas");
+        const startModal = document.getElementById("startModal");
+        const startBtn = document.getElementById("startBtn");
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let gameInstance = null;
+        let animationFrameId = null;
+
+        startBtn.onclick = () => {
+            startModal.style.display = "none";
+            document.body.style.cursor = "none";
+            gameInstance = new Game(canvas);
+            
+            function gameLoop(timestamp) {
+                const deltaTime = timestamp - (gameLoop.lastTimestamp || timestamp);
+                gameLoop.lastTimestamp = timestamp;
+
+                gameInstance.update(deltaTime, performance.now());
+                gameInstance.draw();
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+            gameLoop(performance.now());
+        };
+    </script>
+</body>
+</html>
