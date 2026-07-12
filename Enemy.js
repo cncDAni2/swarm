@@ -2,6 +2,7 @@ import { BasicMeleeAI } from './ai/BasicMeleeAI.js';
 import { BasicRiflemanAI } from './ai/BasicRiflemanAI.js';
 import { FlankerAI } from './ai/FlankerAI.js';
 import { SkyPulseAI } from './ai/SkyPulseAI.js';
+import { ReviAI } from './ai/ReviAI.js';
 
 export class Enemy {
     constructor(x, y, type, shieldExpiry = 0) {
@@ -30,10 +31,16 @@ export class Enemy {
             this.size = 50;
             this.health = 3;
             this.ai = new SkyPulseAI(this);
+        } else if (type === 'revi') {
+            this.color = 'purple';
+            this.size = 60;
+            this.health = 20;
+            this.damage = 20;
+            this.ai = new ReviAI(this);
         }
     }
 
-    update(player, enemies, bullets, currentTime, deltaTime, spawnBullet) {
+    update(player, enemies, bullets, currentTime, deltaTime, spawnBullet, canvasWidth, canvasHeight) {
         // No decrementing logic needed, we check against currentTime
         
         if (this.stunRemaining > 0) {
@@ -52,6 +59,8 @@ export class Enemy {
             this.ai.update(player, enemies, bullets, currentTime);
         } else if (this.type === 'melee') {
             this.ai.update(player, enemies, bullets, currentTime);
+        } else if (this.type === 'revi') {
+            this.ai.update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight);
         } else {
             this.ai.update(player, enemies);
         }
@@ -86,6 +95,14 @@ export class Enemy {
             else if (this.type === 'rifleman') sprite = assets.rifleman;
             else if (this.type === 'flanker') sprite = assets.flanker;
             else if (this.type === 'sky-pulse') sprite = assets.skyPulse;
+            else if (this.type === 'revi') {
+                if (this.ai && (this.ai.phase === 'TARGETING' || this.ai.phase === 'ATTACK')) {
+                    sprite = assets.reviAttack;
+                } else {
+                    const frame = Math.floor(currentTime / 500) % 2;
+                    sprite = frame === 0 ? assets.revi1 : assets.revi2;
+                }
+            }
         }
 
         // Draw the enemy sprite first
@@ -110,6 +127,9 @@ export class Enemy {
                 ctx.strokeStyle = 'cyan';
                 ctx.lineWidth = 3;
                 ctx.stroke();
+            } else if (this.type === 'revi') {
+                ctx.fillStyle = this.ai && this.ai.phase === 'ATTACK' ? 'white' : 'purple';
+                ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
             } else {
                 ctx.fillStyle = this.stunRemaining > 0 ? '#ff8888' : this.color;
                 if (this.type === 'rifleman') {
@@ -150,3 +170,4 @@ export class Enemy {
         ctx.restore();
     }
 }
+

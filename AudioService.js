@@ -10,7 +10,8 @@ export class AudioService {
             bossDamaged: null,
             gameOver: null,
             spawn: null,
-            menuAmbience: null
+            menuAmbience: null,
+            reviAttack: null
         };
         this.loadSounds();
     }
@@ -60,11 +61,19 @@ export class AudioService {
         this.sounds.spawn = new Audio('./assets/spawn.mp3');
         this.sounds.spawn.volume = 0.66;
         this.sounds.spawn.load();
+
+        // Revi attack sound
+        this.sounds.reviAttack = new Audio('./assets/revi-attack.mp3');
+        this.sounds.reviAttack.load();
     }
 
     playNewRound() {
         const sound = this.sounds.newRound[Math.floor(Math.random() * this.sounds.newRound.length)];
         this._playSound(sound);
+    }
+
+    playReviAttack() {
+        this._playSound(this.sounds.reviAttack);
     }
 
     playDamaged() {

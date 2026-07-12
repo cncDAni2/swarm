@@ -1,34 +1,29 @@
 export class Wormhole {
-    constructor(x, y, startTime, pattern = 'duo') {
+    constructor(x, y, startTime, pattern = 'duo', round = 1) {
         this.x = x;
         this.y = y;
         this.startTime = startTime;
         this.spawnCount = 0;
         this.pattern = pattern;
-        
-        if (pattern === 'flanker') {
-            this.maxSpawnsCount = { flanker: 10, skyPulse: 6 };
-            this.maxSpawns = 16;
-            this.spawnRate = 1000; 
-        } else {
-            this.maxSpawns = 20;
-            this.spawnRate = 1000;
-        }
+        this.round = round;
         
         this.activeDelay = 5000;
         this.lastSpawn = 0;
         this.radius = 40;
+        this.spawnRate = 1000;
         this._flankSpawnSeq = 0;
 
         // Configurable spawn counts for each pattern
         if (pattern === 'flanker') {
             this.spawnLimits = { 'flanker': 10, 'sky-pulse': 6 };
-            this.maxSpawns = 16;
+            if (this.round >= 4) {
+                this.spawnLimits['revi'] = 1;
+            }
         } else {
             this.spawnLimits = { 'melee': 10, 'rifleman': 10 };
-            this.maxSpawns = 20;
         }
         
+        this.maxSpawns = Object.values(this.spawnLimits).reduce((a, b) => a + b, 0);
         this.spawnCountTotal = 0;
         this.spawnedCounts = {}; // Track how many of each type we've spawned
         Object.keys(this.spawnLimits).forEach(type => this.spawnedCounts[type] = 0);
@@ -41,11 +36,13 @@ export class Wormhole {
             if (now - this.lastSpawn >= this.spawnRate && this.spawnCountTotal < this.maxSpawns) {
                 let type;
                 if (this.pattern === 'flanker') {
-                    // Pattern: Flankers first, then Sky-Pulses
+                    // Pattern: Flankers first, then Sky-Pulses, then Revi
                     if (this.spawnedCounts['flanker'] < this.spawnLimits['flanker']) {
                         type = 'flanker';
-                    } else {
+                    } else if (this.spawnedCounts['sky-pulse'] < this.spawnLimits['sky-pulse']) {
                         type = 'sky-pulse';
+                    } else if (this.spawnedCounts['revi'] < (this.spawnLimits['revi'] || 0)) {
+                        type = 'revi';
                     }
                 } else {
                     // Pattern: Alternating 2x melee, 2x rifleman

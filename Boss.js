@@ -263,7 +263,7 @@ export class Boss {
             { x: this.x - this.size / 2, y: this.y }  // Left
         ];
         const side = sides[Math.floor(Math.random() * sides.length)];
-        const types = ['melee', 'rifleman', 'flanker', 'sky-pulse'];
+        const types = ['melee', 'rifleman', 'flanker', 'sky-pulse']; // Revi excluded
         const type = types[Math.floor(Math.random() * types.length)];
         
         const newEnemy = new Enemy(side.x, side.y, type, 0);

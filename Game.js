@@ -61,6 +61,9 @@ export class Game {
             rifleman: new Image(),
             flanker: new Image(),
             skyPulse: new Image(),
+            revi1: new Image(),
+            revi2: new Image(),
+            reviAttack: new Image(),
             boss: new Image(),
             bossClosed: new Image()
         };
@@ -70,6 +73,9 @@ export class Game {
         this.assets.rifleman.src = './assets/Rifle.png';
         this.assets.flanker.src = './assets/flanker.png';
         this.assets.skyPulse.src = './assets/skypulse.png';
+        this.assets.revi1.src = './assets/revi-1.png';
+        this.assets.revi2.src = './assets/revi-2.png';
+        this.assets.reviAttack.src = './assets/revi-attack.png';
         this.assets.boss = new Image();
         this.assets.boss.src = './assets/boss-1.png';
         this.assets.bossClosed = new Image();
@@ -89,7 +95,7 @@ export class Game {
         this.wormholeInterval = 40000;
         this.wormholePatternCounter = 0;
         
-        this.round = 0;
+        this.round = 4;
         this.roundDisplayTimer = -5000;
         this.roundDisplayDuration = 3000;
         this.roundTextAlpha = 0;
@@ -384,13 +390,15 @@ export class Game {
                 Math.random() * (this.canvas.width - 100) + 50,
                 Math.random() * (this.canvas.height - 100) + 50,
                 currentTime,
-                'duo'
+                'duo',
+                this.round
             ));
             this.wormholes.push(new Wormhole(
                 Math.random() * (this.canvas.width - 100) + 50,
                 Math.random() * (this.canvas.height - 100) + 50,
                 currentTime,
-                'flanker'
+                'flanker',
+                this.round
             ));
             this.wormholePatternCounter++;
         }
@@ -502,13 +510,15 @@ export class Game {
                     Math.random() * (this.canvas.width - 100) + 50,
                     Math.random() * (this.canvas.height - 100) + 50,
                     currentTime,
-                    'duo'
+                    'duo',
+                    this.round
                 ));
                 this.wormholes.push(new Wormhole(
                     Math.random() * (this.canvas.width - 100) + 50,
                     Math.random() * (this.canvas.height - 100) + 50,
                     currentTime,
-                    'flanker'
+                    'flanker',
+                    this.round
                 ));
             });
         }
@@ -521,8 +531,40 @@ export class Game {
                 } else if (b.ownerType === 'sky-pulse') {
                     this.audio.playEnemyPlasma();
                 }
-            });
+            }, this.canvas.width, this.canvas.height);
             
+            // Revi Attack Logic
+            if (enemy.type === 'revi' && enemy.ai) {
+                if (enemy.ai.phase === 'ATTACK' && enemy.ai.attackTriggered) {
+                    // One-time action when attack triggers
+                    if (currentTime - enemy.ai.phaseStartTime < 50) { // Small window to trigger damage and sound
+                        this.audio.playReviAttack();
+                        
+                        // Check if beam is blocked
+                        const barriers = this.getBarriers();
+                        const isBlocked = barriers.some(wall => 
+                            this.lineRectIntersect(
+                                enemy.x, enemy.y, this.player.x, this.player.y,
+                                wall.x - wall.size/2, wall.y - wall.size/2, wall.size, wall.size
+                            )
+                        );
+                        
+                        if (!isBlocked) {
+                            let dmg = enemy.damage || 20;
+                            if (this.damageResistTimer > 0) {
+                                dmg *= 0.2;
+                            } else {
+                                this.damageResistTimer = 200;
+                            }
+                            this.player.health -= dmg;
+                            this.damageFlash = 200;
+                        }
+                        
+                        enemy.ai.attackTriggered = false; // Prevent multiple damage ticks in one flash
+                    }
+                }
+            }
+
             // Collision with player
             const dx = Math.abs(this.player.x - enemy.x);
             const dy = Math.abs(this.player.y - enemy.y);
@@ -769,6 +811,62 @@ export class Game {
         });
     }
 
+    getBarriers() {
+        const anyRevi = this.enemies.some(e => e.type === 'revi');
+        if (!anyRevi) return [];
+
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const size = 80;
+
+        return [
+            { x: w * 0.33, y: h * 0.33, size: size },
+            { x: w * 0.66, y: h * 0.33, size: size },
+            { x: w * 0.33, y: h * 0.66, size: size },
+            { x: w * 0.66, y: h * 0.66, size: size }
+        ];
+    }
+
+    lineRectIntersect(x1, y1, x2, y2, rx, ry, rw, rh) {
+        // Liang-Barsky algorithm or simpler checks for our needs
+        // We'll use a simple clip-line approach
+        const clipLine = (x1, y1, x2, y2, rx, ry, rw, rh) => {
+            let t0 = 0, t1 = 1;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const p = [-dx, dx, -dy, dy];
+            const q = [x1 - rx, rx + rw - x1, y1 - ry, ry + rh - y1];
+
+            for (let i = 0; i < 4; i++) {
+                if (p[i] === 0) {
+                    if (q[i] < 0) return false;
+                } else {
+                    const t = q[i] / p[i];
+                    if (p[i] < 0) {
+                        if (t > t1) return false;
+                        if (t > t0) t0 = t;
+                    } else {
+                        if (t < t0) return false;
+                        if (t < t1) t1 = t;
+                    }
+                }
+            }
+            return true;
+        };
+        return clipLine(x1, y1, x2, y2, rx, ry, rw, rh);
+    }
+
+    lineLineIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (den === 0) return null;
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1), t };
+        }
+        return null;
+    }
+
     draw() {
         const currentTime = this.gameTime;
         this.ctx.fillStyle = 'black';
@@ -790,9 +888,75 @@ export class Game {
         this.ctx.fill();
         this.ctx.restore();
 
+        // Draw Barriers
+        const barriers = this.getBarriers();
+        barriers.forEach(wall => {
+            this.ctx.save();
+            this.ctx.strokeStyle = '#FFFF00'; // Pure yellow
+            this.ctx.lineWidth = 15; // Thick border
+            this.ctx.strokeRect(wall.x - wall.size/2, wall.y - wall.size/2, wall.size, wall.size);
+            
+            // Optional: thin inner border for detail
+            this.ctx.strokeStyle = '#DAA520';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(wall.x - wall.size/2 + 7.5, wall.y - wall.size/2 + 7.5, wall.size - 15, wall.size - 15);
+            this.ctx.restore();
+        });
+
         this.wormholes.forEach(wh => wh.draw(this.ctx, this.assets.spawn, currentTime));
         if (this.boss) this.boss.draw(this.ctx, this.gameTime, this.assets);
         
+        // Draw Revi Beams
+        this.enemies.filter(e => e.type === 'revi' && e.ai && (e.ai.phase === 'TARGETING' || e.ai.phase === 'ATTACK')).forEach(revi => {
+            this.ctx.save();
+            this.ctx.beginPath();
+            
+            // Check if blocked to determine beam endpoint
+            let targetX = this.player.x;
+            let targetY = this.player.y;
+
+            // Simple line-segment clipping against boxes for visual beam
+            let shortestT = 1;
+            barriers.forEach(wall => {
+                const rx = wall.x - wall.size/2;
+                const ry = wall.y - wall.size/2;
+                const rw = wall.size;
+                const rh = wall.size;
+
+                // Test each of the 4 edges of the box
+                const edges = [
+                    {x1: rx, y1: ry, x2: rx+rw, y2: ry},
+                    {x1: rx+rw, y1: ry, x2: rx+rw, y2: ry+rh},
+                    {x1: rx+rw, y1: ry+rh, x2: rx, y2: ry+rh},
+                    {x1: rx, y1: ry+rh, x2: rx, y2: ry}
+                ];
+
+                edges.forEach(edge => {
+                    const intersect = this.lineLineIntersect(revi.x, revi.y, this.player.x, this.player.y, edge.x1, edge.y1, edge.x2, edge.y2);
+                    if (intersect && intersect.t >= 0 && intersect.t < shortestT) {
+                        shortestT = intersect.t;
+                    }
+                });
+            });
+
+            const drawX = revi.x + (this.player.x - revi.x) * shortestT;
+            const drawY = revi.y + (this.player.y - revi.y) * shortestT;
+
+            if (revi.ai.phase === 'TARGETING') {
+                this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.2)'; // Fading yellow
+                this.ctx.lineWidth = 15;
+            } else {
+                // Flash white/yellow
+                this.ctx.strokeStyle = Math.floor(currentTime / 50) % 2 === 0 ? 'white' : 'yellow';
+                this.ctx.lineWidth = 25;
+            }
+            
+            this.ctx.moveTo(revi.x, revi.y);
+            this.ctx.lineTo(drawX, drawY);
+            this.ctx.stroke();
+            this.ctx.restore();
+        });
+
         // Draw Player Sprite
         const playerImg = this.player.shootVisualTimer > 0 ? this.assets.playerShoot : this.assets.playerIdle;
         

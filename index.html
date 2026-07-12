@@ -249,6 +249,17 @@
 
             <div class="enemy-info">
                 <div class="enemy-preview">
+                    <img src="assets/revi-1.png" alt="Revi" id="reviPreview">
+                    <div class="stats">❤️ 20 ⚔️ 20</div>
+                </div>
+                <div class="enemy-details">
+                    <h3>Revi</h3>
+                    <p>A 4. fordulótól megjelenő elit egység. Kiszámíthatatlan mozgás után egy pusztító sugárnyalábbal veszi célba a játékost. A sugár ellen csak a pálya közepén megjelenő sárga falak nyújtanak fedezéket.</p>
+                </div>
+            </div>
+
+            <div class="enemy-info">
+                <div class="enemy-preview">
                     <img src="assets/boss-1.png" alt="Boss">
                     <div class="stats">❤️ 100 <br>⚔️ 30, 15</div>
                 </div>
@@ -306,6 +317,19 @@
         const selectionSound = new Audio('./assets/select.mp3');
         selectionSound.volume = 1;
 
+        // Animate Revi preview
+        const reviPreview = document.getElementById('reviPreview');
+        if (reviPreview) {
+            setInterval(() => {
+                const currentSrc = reviPreview.src;
+                if (currentSrc.includes('revi-1.png')) {
+                    reviPreview.src = 'assets/revi-2.png';
+                } else {
+                    reviPreview.src = 'assets/revi-1.png';
+                }
+            }, 500);
+        }
+
         // Try to play immediately (works in Electron with the configured autoplay policy)
         audio.playMenuAmbience();
 
@@ -358,10 +382,21 @@
             
             startModal.style.display = "flex";
             document.body.style.cursor = "default";
+            
+            // Re-enable ambience listeners
+            window.addEventListener('click', startAmbience);
+            window.addEventListener('keydown', startAmbience);
+            
             audio.playMenuAmbience();
         };
 
-        startBtn.onclick = () => {
+        startBtn.onclick = (e) => {
+            if (e) e.stopPropagation();
+            
+            // Remove ambience listeners immediately to prevent this click from starting it
+            window.removeEventListener('click', startAmbience);
+            window.removeEventListener('keydown', startAmbience);
+            
             audio.stopMenuAmbience();
             startModal.style.display = "none";
             document.body.style.cursor = "none";
