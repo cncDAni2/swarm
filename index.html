@@ -338,8 +338,23 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-               let gameInstance = null;
+        let gameInstance = null;
         let animationFrameId = null;
+
+        const returnToMenu = () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            if (gameInstance) {
+                gameInstance.cleanup();
+                gameInstance = null;
+            }
+            
+            startModal.style.display = "flex";
+            document.body.style.cursor = "default";
+            audio.playMenuAmbience();
+        };
 
         startBtn.onclick = () => {
             audio.stopMenuAmbience();
@@ -348,9 +363,11 @@
             
             resizeCanvas();
             
-            gameInstance = new Game(canvas, selectedDifficulty);
+            gameInstance = new Game(canvas, selectedDifficulty, returnToMenu);
             
             function gameLoop(timestamp) {
+                if (!gameInstance) return;
+                
                 const deltaTime = Math.min(64, timestamp - (gameLoop.lastTimestamp || timestamp));
                 gameLoop.lastTimestamp = timestamp;
 

@@ -4,11 +4,12 @@ import { AudioService } from './AudioService.js';
 import { Boss } from './Boss.js';
 
 export class Game {
-    constructor(canvas, difficulty = 'ultra-violence') {
+    constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.audio = new AudioService();
         this.difficulty = difficulty;
+        this.onMainMenu = onMainMenu;
         
         // Difficulty settings
         let maxHP = 100;
@@ -145,8 +146,33 @@ export class Game {
         styleButton(this.restartRoundBtn, 'RESTART FROM ROUND X');
         this.restartRoundBtn.style.top = '75%';
 
-        this.restartBtn.onclick = () => location.reload();
+        this.restartBtn.onclick = () => {
+            if (this.onMainMenu) {
+                this.onMainMenu();
+            } else {
+                location.reload();
+            }
+        };
         this.restartRoundBtn.onclick = () => this.resetGame(false);
+    }
+
+    cleanup() {
+        this.audio.stopAll();
+        if (this.restartBtn && this.restartBtn.parentNode) {
+            this.restartBtn.parentNode.removeChild(this.restartBtn);
+        }
+        if (this.restartRoundBtn && this.restartRoundBtn.parentNode) {
+            this.restartRoundBtn.parentNode.removeChild(this.restartRoundBtn);
+        }
+
+        // Cleanup event listeners
+        window.removeEventListener('keydown', this._boundKeyDown);
+        window.removeEventListener('keyup', this._boundKeyUp);
+        window.removeEventListener('mousedown', this._boundMouseDown);
+        window.removeEventListener('mouseup', this._boundMouseUp);
+        window.removeEventListener('mousemove', this._boundMouseMove);
+        window.removeEventListener('blur', this._boundBlur);
+        window.removeEventListener('focus', this._boundFocus);
     }
 
     resetGame(fromStart) {
@@ -186,25 +212,28 @@ export class Game {
     }
 
     setupEventListeners() {
-        window.addEventListener('keydown', e => this.keys[e.code] = true);
-        window.addEventListener('keyup', e => this.keys[e.code] = false);
-        window.addEventListener('mousedown', e => {
+        this._boundKeyDown = e => this.keys[e.code] = true;
+        this._boundKeyUp = e => this.keys[e.code] = false;
+        this._boundMouseDown = e => {
             this.isMouseDown = true;
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
-        });
-        window.addEventListener('mouseup', () => this.isMouseDown = false);
-        window.addEventListener('mousemove', e => {
+        };
+        this._boundMouseUp = () => this.isMouseDown = false;
+        this._boundMouseMove = e => {
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
-        });
+        };
+        this._boundBlur = () => { this.paused = true; };
+        this._boundFocus = () => { this.paused = false; };
 
-        window.addEventListener('blur', () => {
-            this.paused = true;
-        });
-        window.addEventListener('focus', () => {
-            this.paused = false;
-        });
+        window.addEventListener('keydown', this._boundKeyDown);
+        window.addEventListener('keyup', this._boundKeyUp);
+        window.addEventListener('mousedown', this._boundMouseDown);
+        window.addEventListener('mouseup', this._boundMouseUp);
+        window.addEventListener('mousemove', this._boundMouseMove);
+        window.addEventListener('blur', this._boundBlur);
+        window.addEventListener('focus', this._boundFocus);
     }
 
     update(deltaTime) {
