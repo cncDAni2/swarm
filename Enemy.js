@@ -56,7 +56,7 @@ export class Enemy {
         } else if (this.type === 'sky-pulse') {
             this.ai.update(player, enemies, bullets, currentTime, spawnBullet);
         } else if (this.type === 'flanker') {
-            this.ai.update(player, enemies, bullets, currentTime);
+            this.ai.update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight);
         } else if (this.type === 'melee') {
             this.ai.update(player, enemies, bullets, currentTime);
         } else if (this.type === 'revi') {

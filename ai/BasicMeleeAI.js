@@ -3,6 +3,10 @@ export class BasicMeleeAI {
         this.owner = owner; // The enemy object this AI controls
         this.speed = 1.6;
         this.partner = null;
+        // Role assigned by Game.redistributeBodyguards(): 'bodyguard' or 'blocker'.
+        this.role = 'blocker';
+        this.blockerIndex = 0;   // slot index among blockers (for pincer spread)
+        this.blockerTotal = 1;   // total blockers (for pincer spread)
         this.lastEvadeUpdateTime = 0;
         this.playerBulletWalls = [];
         this.evadeWalls = [];
@@ -10,22 +14,20 @@ export class BasicMeleeAI {
 
     update(player, enemies, bullets, currentTime) {
         const riflemen = enemies.filter(e => e.type === 'rifleman');
-        
-        // 1. Partner management
+
+        // 1. Partner management (fallback if Game.js hasn't assigned yet or partner died)
         if (this.partner && !enemies.includes(this.partner)) {
             this.partner = null;
         }
-
-        if (!this.partner) {
-            // Find a partner if Game.js hasn't assigned one yet or if they died
+        if (!this.partner && riflemen.length > 0) {
             const availableRiflemen = riflemen.filter(r => {
                 const hasPartner = enemies.some(e => e.type === 'melee' && e.ai && e.ai.partner === r);
                 return !hasPartner;
             });
-            let candidates = availableRiflemen.length > 0 ? availableRiflemen : riflemen;
+            const candidates = availableRiflemen.length > 0 ? availableRiflemen : riflemen;
             let minDist = Infinity;
             candidates.forEach(r => {
-                const d = Math.sqrt((this.owner.x - r.x) ** 2 + (this.owner.y - r.y) ** 2);
+                const d = (this.owner.x - r.x) ** 2 + (this.owner.y - r.y) ** 2;
                 if (d < minDist) {
                     minDist = d;
                     this.partner = r;
@@ -39,45 +41,23 @@ export class BasicMeleeAI {
         const dy = player.y - this.owner.y;
         const distToPlayer = Math.sqrt(dx * dx + dy * dy);
 
-        // Movement Mode Decision
-        let targetX = player.x;
-        let targetY = player.y;
-        let isFormation = false;
-
-        // Formation Mode: If distance > 300 AND we have a partner
-        if (distToPlayer > 300 && this.partner) {
-            const pdx = player.x - this.partner.x;
-            const pdy = player.y - this.partner.y;
-            const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
-
-            if (pdist > 0) {
-                const ux = pdx / pdist;
-                const uy = pdy / pdist;
-                const perpX = -uy;
-                const perpY = ux;
-
-                // Find other bodyguards for this partner to spread out
-                const bodyguards = enemies.filter(e => e.type === 'melee' && e.ai && e.ai.partner === this.partner);
-                const myIndex = bodyguards.indexOf(this.owner);
-                
-                // Spread pattern: alternate sides and stagger depth
-                const side = (myIndex % 2 === 0) ? 1 : -1;
-                const depth = 80 + Math.floor(myIndex / 2) * 25;
-                const offsetSide = 35;
-
-                targetX = this.partner.x + ux * depth + perpX * offsetSide * side;
-                targetY = this.partner.y + uy * depth + perpY * offsetSide * side;
-                isFormation = true;
-            }
-        }
-
-        const tdx = targetX - this.owner.x;
-        const tdy = targetY - this.owner.y;
+        // 2. Role-based target position.
+        const target = this.computeRoleTarget(player, enemies);
+        const tdx = target.x - this.owner.x;
+        const tdy = target.y - this.owner.y;
         const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
 
         if (tdist > 0) {
             moveX = (tdx / tdist) * this.speed;
             moveY = (tdy / tdist) * this.speed;
+        }
+
+        // 3. TOP PRIORITY: clear any active rifle fire-lane (shortest possible disruption).
+        const laneSteer = this.computeLaneClearing(riflemen);
+        if (laneSteer.active) {
+            // Override role movement with a hard sidestep out of the shot corridor.
+            moveX = laneSteer.x * this.speed;
+            moveY = laneSteer.y * this.speed;
         }
 
         // --- Projectile Evasion ---
@@ -97,16 +77,8 @@ export class BasicMeleeAI {
         }
         this.evadeWalls = [...this.playerBulletWalls, ...urgentWalls];
 
-        // Firing Lines: Real-time update
-        const activeFiringLines = [];
-        riflemen.forEach(r => {
-            if (r.ai && r.ai.currentFiringLine) {
-                activeFiringLines.push({ type: 'firingLine', ...r.ai.currentFiringLine });
-            }
-        });
-
         // Apply Forces
-        [...this.evadeWalls, ...activeFiringLines].forEach(w => {
+        this.evadeWalls.forEach(w => {
             const vbx = this.owner.x - w.x;
             const vby = this.owner.y - w.y;
             const vlen = Math.sqrt((w.vx || 0)**2 + (w.vy || 0)**2);
@@ -119,9 +91,7 @@ export class BasicMeleeAI {
             let width = 50;
             let force = 2.0;
 
-            if (w.type === 'firingLine') {
-                range = w.dist; width = 40; force = 2.5;
-            } else if (w.type === 'player-bullet') {
+            if (w.type === 'player-bullet') {
                 range = 2000; width = 25; force = 2.0;
             } else if (w.type === 'boss-bullet') {
                 range = 90; width = 34; force = 4.0;
@@ -193,5 +163,87 @@ export class BasicMeleeAI {
 
         this.owner.x += combinedX;
         this.owner.y += combinedY;
+    }
+
+    // Decide where this melee should be based on its role.
+    computeRoleTarget(player, enemies) {
+        // No rifle to protect -> behave as a straight chaser.
+        if (!this.partner) {
+            return { x: player.x, y: player.y };
+        }
+
+        const rifle = this.partner;
+        // Unit vector pointing from the rifle toward the player (the threat direction).
+        const rpx = player.x - rifle.x;
+        const rpy = player.y - rifle.y;
+        const rpLen = Math.sqrt(rpx * rpx + rpy * rpy) || 1;
+        const ux = rpx / rpLen;
+        const uy = rpy / rpLen;
+        const perpX = -uy;
+        const perpY = ux;
+
+        if (this.role === 'bodyguard') {
+            // Sit on the player-facing side of the rifle, close, interposing its body.
+            // Because the rifle is slow, the guard naturally orbits it as the player moves.
+            const guardDist = 55;
+            return {
+                x: rifle.x + ux * guardDist,
+                y: rifle.y + uy * guardDist
+            };
+        }
+
+        // Blocker: screen the player's line to the rifle and form a pincer arc
+        // near the player, on the rifle-facing hemisphere.
+        const total = Math.max(1, this.blockerTotal);
+        // Spread blockers across an arc in front of the player toward the rifle.
+        const spread = 0.7; // radians of half-arc
+        let t = 0;
+        if (total > 1) t = (this.blockerIndex / (total - 1)) * 2 - 1; // -1..1
+        const sideOffset = t * spread;
+
+        // Base direction: from player toward the rifle (so we cut the shooting lane).
+        const cos = Math.cos(sideOffset);
+        const sin = Math.sin(sideOffset);
+        // Rotate the (-u) direction (player->rifle) by the arc offset.
+        const baseX = -ux;
+        const baseY = -uy;
+        const dirX = baseX * cos - baseY * sin;
+        const dirY = baseX * sin + baseY * cos;
+
+        const screenDist = 90; // how far in front of the player to sit
+        return {
+            x: player.x + dirX * screenDist + perpX * t * 30,
+            y: player.y + dirY * screenDist + perpY * t * 30
+        };
+    }
+
+    // Return a normalized sidestep vector if any rifle is actively requesting this
+    // unit's position be cleared from its shot corridor. Highest movement priority.
+    computeLaneClearing(riflemen) {
+        for (const r of riflemen) {
+            const req = r.ai && r.ai.fireLaneRequest;
+            if (!req) continue;
+
+            const vpx = this.owner.x - req.x;
+            const vpy = this.owner.y - req.y;
+            const proj = vpx * req.ux + vpy * req.uy;
+            if (proj <= 0 || proj >= req.dist) continue;
+
+            const closestX = req.x + req.ux * proj;
+            const closestY = req.y + req.uy * proj;
+            const offX = this.owner.x - closestX;
+            const offY = this.owner.y - closestY;
+            const offDistSq = offX * offX + offY * offY;
+            const corridor = 34; // must exceed rifle's isFriendlyInLane radius (28) to fully clear
+
+            if (offDistSq < corridor * corridor) {
+                const perpX = -req.uy;
+                const perpY = req.ux;
+                const side = offX * perpX + offY * perpY;
+                const dir = side >= 0 ? 1 : -1;
+                return { active: true, x: perpX * dir, y: perpY * dir };
+            }
+        }
+        return { active: false, x: 0, y: 0 };
     }
 }

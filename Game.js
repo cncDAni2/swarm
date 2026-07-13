@@ -225,8 +225,9 @@ export class Game {
             this.gameTime = 0;
             this.lastWormholeSpawn = -40000;
         } else {
-            // Keep round and kills (but subtract 1 because the game loop will increment it immediately)
+            // Restart the current round and reset kills
             this.round = Math.max(0, this.round - 1);
+            this.kills = 0;
             this.lastWormholeSpawn = this.gameTime - 40000;
         }
     }
@@ -884,32 +885,75 @@ export class Game {
     redistributeBodyguards() {
         const riflemen = this.enemies.filter(e => e.type === 'rifleman');
         const meleeUnits = this.enemies.filter(e => e.type === 'melee');
-        
+
         if (riflemen.length === 0) {
-            meleeUnits.forEach(m => { if (m.ai) m.ai.partner = null; });
+            meleeUnits.forEach(m => {
+                if (m.ai) {
+                    m.ai.partner = null;
+                    m.ai.role = 'blocker';
+                }
+            });
+            // Even with no rifles, keep blocker pincer indices coherent.
+            this.assignBlockerSlots(meleeUnits);
             return;
         }
 
-        const counts = new Map();
-        riflemen.forEach(r => counts.set(r, 0));
+        // 1) Assign the closest available melee to each rifle as its dedicated bodyguard.
+        const guardedRiflemen = new Set();
+        const bodyguards = new Set();
+        const availableMelee = [...meleeUnits];
 
-        // Sort melee units by distance to their closest rifleman to try and fill logical slots first?
-        // Or just iterate. Iteration is probably fine.
-        meleeUnits.forEach(m => {
-            const sortedRiflemen = [...riflemen].sort((a, b) => {
-                const countA = counts.get(a);
-                const countB = counts.get(b);
-                if (countA !== countB) return countA - countB;
-                
-                const distA = (m.x - a.x)**2 + (m.y - a.y)**2;
-                const distB = (m.x - b.x)**2 + (m.y - b.y)**2;
-                return distA - distB;
+        // Greedily pick, per rifle, the nearest still-free melee.
+        riflemen.forEach(rifle => {
+            let best = null;
+            let bestDist = Infinity;
+            availableMelee.forEach(m => {
+                if (bodyguards.has(m)) return;
+                const d = (m.x - rifle.x) ** 2 + (m.y - rifle.y) ** 2;
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = m;
+                }
             });
+            if (best && best.ai) {
+                best.ai.partner = rifle;
+                best.ai.role = 'bodyguard';
+                bodyguards.add(best);
+                guardedRiflemen.add(rifle);
+            }
+        });
 
-            const bestPartner = sortedRiflemen[0];
+        // 2) Everyone else becomes a blocker, partnered to the least-crowded rifle.
+        const rifleLoad = new Map();
+        riflemen.forEach(r => rifleLoad.set(r, 0));
+
+        const blockers = meleeUnits.filter(m => !bodyguards.has(m));
+        blockers.forEach(m => {
+            const rifle = [...riflemen].sort((a, b) => {
+                const la = rifleLoad.get(a);
+                const lb = rifleLoad.get(b);
+                if (la !== lb) return la - lb;
+                const da = (m.x - a.x) ** 2 + (m.y - a.y) ** 2;
+                const db = (m.x - b.x) ** 2 + (m.y - b.y) ** 2;
+                return da - db;
+            })[0];
             if (m.ai) {
-                m.ai.partner = bestPartner;
-                counts.set(bestPartner, counts.get(bestPartner) + 1);
+                m.ai.partner = rifle;
+                m.ai.role = 'blocker';
+                rifleLoad.set(rifle, rifleLoad.get(rifle) + 1);
+            }
+        });
+
+        this.assignBlockerSlots(blockers);
+    }
+
+    // Give blockers stable indices so their pincer arc spreads evenly.
+    assignBlockerSlots(blockers) {
+        const total = blockers.length;
+        blockers.forEach((m, i) => {
+            if (m.ai) {
+                m.ai.blockerIndex = i;
+                m.ai.blockerTotal = total;
             }
         });
     }

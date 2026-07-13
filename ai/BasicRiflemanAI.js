@@ -15,6 +15,16 @@ export class BasicRiflemanAI {
         this.isPredictiveBurst = false;
         this.lastBurstTime = 0;
 
+        // Fire-lane telegraph state machine: 'ready' -> 'aiming' -> 'bursting'
+        this.fireState = 'ready';
+        this.aimStartTime = 0;
+        this.minTelegraph = 120;  // minimum time to broadcast the lane before firing
+        this.maxAimWait = 550;    // give up (abort) if ground units can't clear the lane
+        this.lockedTarget = null; // aim point locked in at fire time
+        // Published lane request. Ground units read this to vacate the shot path.
+        // Shape: { x, y, ux, uy, dist } or null when not firing.
+        this.fireLaneRequest = null;
+
         // Evasion logic for projectiles
         this.lastEvadeUpdateTime = 0;
         this.playerBulletWalls = [];
@@ -130,55 +140,115 @@ export class BasicRiflemanAI {
         this.owner.x += moveX;
         this.owner.y += moveY;
 
-        // Reset firing line if not shooting
-        this.currentFiringLine = null;
+        // 3. Shooting logic: telegraph -> clear lane -> fire.
+        this.updateFireStateMachine(player, enemies, distToPlayer, dx, dy, currentTime, spawnBullet);
+    }
 
-        // 3. Shooting logic (Burst Mode)
-        const canStartBurst = currentTime - this.lastBurstTime >= this.fireRateDelay && this.burstCount === 0;
-        const canContinueBurst = this.burstCount > 0 && currentTime - this.lastShotTime >= this.burstInterval;
+    // Compute the aim point (predictive or direct) for the current burst.
+    computeAimPoint(player, distToPlayer) {
+        if (!this.isPredictiveBurst) {
+            return { x: player.x, y: player.y };
+        }
+        const playerVelLen = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+        if (playerVelLen <= 0.1) {
+            return { x: player.x, y: player.y };
+        }
+        const ux = player.vx / playerVelLen;
+        const uy = player.vy / playerVelLen;
+        const constantSpeed = 4.12;
 
-        if ((canStartBurst || canContinueBurst) && distToPlayer < this.fireRange) {
-            if (!this.isAnyFriendlyWithin100Units(player, enemies)) {
-                // Determine burst mode at the start of a new burst
-                if (this.burstCount === 0) {
-                    this.isPredictiveBurst = Math.random() < 0.7;
-                    this.lastBurstTime = currentTime;
-                }
+        let travelTime = distToPlayer / this.bulletSpeed;
+        const predictedX = player.x + ux * constantSpeed * travelTime;
+        const predictedY = player.y + uy * constantSpeed * travelTime;
+        const distToPredicted = Math.sqrt((predictedX - this.owner.x) ** 2 + (predictedY - this.owner.y) ** 2);
+        travelTime = distToPredicted / this.bulletSpeed;
 
-                let targetX = player.x;
-                let targetY = player.y;
+        return {
+            x: player.x + ux * constantSpeed * travelTime,
+            y: player.y + uy * constantSpeed * travelTime
+        };
+    }
 
-                if (this.isPredictiveBurst) {
-                    const playerVelLen = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
-                    if (playerVelLen > 0.1) {
-                        const ux = player.vx / playerVelLen;
-                        const uy = player.vy / playerVelLen;
-                        const constantSpeed = 4.12;
+    // Publish/refresh the lane request so ALL ground units know to vacate the path.
+    publishLaneToTarget(targetX, targetY) {
+        const ldx = targetX - this.owner.x;
+        const ldy = targetY - this.owner.y;
+        const llen = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
+        this.fireLaneRequest = {
+            x: this.owner.x,
+            y: this.owner.y,
+            ux: ldx / llen,
+            uy: ldy / llen,
+            dist: llen
+        };
+        // Kept for backward-compat with any evasion readers.
+        this.currentFiringLine = {
+            x: this.owner.x,
+            y: this.owner.y,
+            dist: llen,
+            ux: ldx / llen,
+            uy: ldy / llen
+        };
+    }
 
-                        let travelTime = distToPlayer / this.bulletSpeed;
-                        let predictedX = player.x + ux * constantSpeed * travelTime;
-                        let predictedY = player.y + uy * constantSpeed * travelTime;
-                        
-                        const distToPredicted = Math.sqrt((predictedX - this.owner.x)**2 + (predictedY - this.owner.y)**2);
-                        travelTime = distToPredicted / this.bulletSpeed;
-                        
-                        targetX = player.x + ux * constantSpeed * travelTime;
-                        targetY = player.y + uy * constantSpeed * travelTime;
-                    }
-                }
+    updateFireStateMachine(player, enemies, distToPlayer, dx, dy, currentTime, spawnBullet) {
+        // Out of range: stand down completely, release any lane request.
+        if (distToPlayer >= this.fireRange) {
+            this.fireState = 'ready';
+            this.fireLaneRequest = null;
+            this.currentFiringLine = null;
+            this.burstCount = 0;
+            return;
+        }
 
-                const pdx = targetX - this.owner.x;
-                const pdy = targetY - this.owner.y;
-                const angle = Math.atan2(pdy, pdx);
-                
-                this.currentFiringLine = {
-                    x: this.owner.x,
-                    y: this.owner.y,
-                    dist: distToPlayer,
-                    ux: dx / distToPlayer,
-                    uy: dy / distToPlayer
-                };
+        if (this.fireState === 'ready') {
+            // Wait for cooldown, then begin telegraphing a new shot.
+            if (currentTime - this.lastBurstTime >= this.fireRateDelay) {
+                this.isPredictiveBurst = Math.random() < 0.7;
+                this.aimStartTime = currentTime;
+                this.fireState = 'aiming';
+            } else {
+                this.fireLaneRequest = null;
+                this.currentFiringLine = null;
+            }
+        }
 
+        if (this.fireState === 'aiming') {
+            // Lock aim and broadcast the lane so allies open a path.
+            this.lockedTarget = this.computeAimPoint(player, distToPlayer);
+            this.publishLaneToTarget(this.lockedTarget.x, this.lockedTarget.y);
+
+            const laneClear = !this.isFriendlyInLane(this.lockedTarget, enemies);
+            const telegraphed = currentTime - this.aimStartTime >= this.minTelegraph;
+
+            if (telegraphed && laneClear) {
+                // Path is open: commit to the burst.
+                this.fireState = 'bursting';
+                this.burstCount = 0;
+                this.lastBurstTime = currentTime;
+                this.lastShotTime = -Infinity; // fire first shot immediately
+            } else if (currentTime - this.aimStartTime >= this.maxAimWait) {
+                // Allies never cleared the lane: abort to avoid friendly fire, reset cooldown.
+                this.fireState = 'ready';
+                this.lastBurstTime = currentTime;
+                this.fireLaneRequest = null;
+                this.currentFiringLine = null;
+            }
+        }
+
+        if (this.fireState === 'bursting') {
+            // Abort mid-burst if an ally wanders into the locked lane.
+            if (this.isFriendlyInLane(this.lockedTarget, enemies)) {
+                this.fireState = 'ready';
+                this.lastBurstTime = currentTime;
+                this.burstCount = 0;
+                this.fireLaneRequest = null;
+                this.currentFiringLine = null;
+                return;
+            }
+
+            if (currentTime - this.lastShotTime >= this.burstInterval) {
+                const angle = Math.atan2(this.lockedTarget.y - this.owner.y, this.lockedTarget.x - this.owner.x);
                 spawnBullet({
                     x: this.owner.x,
                     y: this.owner.y,
@@ -189,106 +259,42 @@ export class BasicRiflemanAI {
                     ownerType: 'enemy',
                     source: this.owner
                 });
-
                 this.lastShotTime = currentTime;
                 this.burstCount++;
 
                 if (this.burstCount >= this.maxBurst) {
-                    this.burstCount = 0;
+                    this.fireState = 'ready';
+                    this.lastBurstTime = currentTime;
+                    this.fireLaneRequest = null;
+                    this.currentFiringLine = null;
                 }
             }
         }
     }
 
-    isAnyFriendlyWithin100Units(player, enemies) {
-        const dx = player.x - this.owner.x;
-        const dy = player.y - this.owner.y;
-        const distToPlayer = Math.sqrt(dx * dx + dy * dy);
-        if (distToPlayer === 0) return false;
+    // True if any friendly ground unit sits inside the shot corridor toward the aim point.
+    isFriendlyInLane(target, enemies) {
+        const ldx = target.x - this.owner.x;
+        const ldy = target.y - this.owner.y;
+        const dist = Math.sqrt(ldx * ldx + ldy * ldy);
+        if (dist === 0) return false;
 
-        const ux = dx / distToPlayer;
-        const uy = dy / distToPlayer;
+        const ux = ldx / dist;
+        const uy = ldy / dist;
+        const checkRadius = 28; // corridor half-width
 
         for (const other of enemies) {
             if (other === this.owner) continue;
-            if (other.type === 'sky-pulse') continue;
+            if (other.type === 'sky-pulse') continue; // flyers are out of plane
 
             const vpx = other.x - this.owner.x;
             const vpy = other.y - this.owner.y;
             const proj = vpx * ux + vpy * uy;
 
-            if (proj > 0 && proj < 100) {
+            if (proj > 0 && proj < dist) {
                 const closestX = this.owner.x + ux * proj;
                 const closestY = this.owner.y + uy * proj;
                 const distToLineSq = (other.x - closestX) ** 2 + (other.y - closestY) ** 2;
-                if (distToLineSq < 1600) return true;
-            }
-        }
-        return false;
-    }
-
-    hasMeleePartnerInFront(player, enemies) {
-        // Find if this Rifleman has Melee partners (who have this as .partner)
-        // and if any of them are between this and the player.
-        const me = this.owner;
-
-        const partners = enemies.filter(e => e.type === 'melee' && e.ai && e.ai.partner === me);
-        if (partners.length === 0) return false;
-
-        const dx = player.x - me.x;
-        const dy = player.y - me.y;
-        const distToPlayer = Math.sqrt(dx * dx + dy * dy);
-
-        if (distToPlayer === 0) return false;
-
-        const ux = dx / distToPlayer;
-        const uy = dy / distToPlayer;
-
-        for (const partner of partners) {
-            // Check if the partner is between me and the player
-            const vpx = partner.x - me.x;
-            const vpy = partner.y - me.y;
-            const proj = vpx * ux + vpy * uy;
-
-            if (proj > 5 && proj < distToPlayer) {
-                // Partner is in front. Check how close to the line.
-                const closestX = me.x + ux * proj;
-                const closestY = me.y + uy * proj;
-                const distToLineSq = (partner.x - closestX) ** 2 + (partner.y - closestY) ** 2;
-                
-                // If within 80 units of the ideal line, we consider it "in front"
-                if (distToLineSq < 6400) return true;
-            }
-        }
-        
-        return false;
-    }
-
-    isFriendlyInWay(player, enemies) {
-        const dx = player.x - this.owner.x;
-        const dy = player.y - this.owner.y;
-        const distToPlayer = Math.sqrt(dx * dx + dy * dy);
-
-        if (distToPlayer === 0) return false;
-
-        const ux = dx / distToPlayer;
-        const uy = dy / distToPlayer;
-        const checkRadius = 25; // 50 units wide total
-
-        for (const other of enemies) {
-            if (other === this.owner) continue;
-            // Ground units shouldn't worry about hitting flying ones
-            if (other.type === 'sky-pulse') continue;
-
-            const vpx = other.x - this.owner.x;
-            const vpy = other.y - this.owner.y;
-            const proj = vpx * ux + vpy * uy;
-
-            if (proj > 0 && proj < distToPlayer) {
-                const closestX = this.owner.x + ux * proj;
-                const closestY = this.owner.y + uy * proj;
-                const distToLineSq = (other.x - closestX) ** 2 + (other.y - closestY) ** 2;
-
                 if (distToLineSq < checkRadius * checkRadius) return true;
             }
         }
