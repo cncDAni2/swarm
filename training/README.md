@@ -54,3 +54,5 @@ npm run train-imitation -- --data "C:\path\to\episodes" --output "C:\path\to\mod
 The trainer reads the JSONL episodes, trains on the GPU, and exports `model.json`, `weights.bin`, and an updated `metadata.json`. Those three files are the model artifact to import back into the Electron game.
 
 Each JSONL line is one imitation-learning transition: current observation (`state`), the heuristic bot's discrete action (`action`), reward, next observation (`nextState`), and the terminal flag (`done`). The first trainer will use `state` and `action` to reproduce the heuristic bot, then later reinforcement learning can use reward, nextState, and done to improve it.
+
+After training, start the game normally with `npm run start-exe` and select **Neurális bot** from the bot-mode menu. The game loads `training/models/imitation-policy/model.json` plus its weights automatically. Compare its survival time and reached round to the heuristic bot before beginning reward-based fine-tuning.

@@ -302,8 +302,12 @@
                 </div>
 
                 <div style="margin-top: 20px; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;" id="botToggleContainer">
-                    <input type="checkbox" id="botEnabled" style="width: 20px; height: 20px; cursor: pointer;">
-                    <label for="botEnabled" style="cursor: pointer;">BOT MÓD (Önműködő játék)</label>
+                    <label for="botMode" style="cursor: pointer;">BOT MÓD</label>
+                    <select id="botMode" style="font-size: 1rem; cursor: pointer;">
+                        <option value="off">Kézi irányítás</option>
+                        <option value="heuristic">Heurisztikus bot</option>
+                        <option value="neural">Neurális bot</option>
+                    </select>
                 </div>
 
                 <button id="startBtn">JÁTÉK INDÍTÁSA</button>
@@ -311,6 +315,7 @@
         </div>
     </div>
     <canvas id="gameCanvas"></canvas>
+    <script src="./node_modules/@tensorflow/tfjs/dist/tf.min.js"></script>
     <script type="module">
         import { Game } from "./Game.js";
         import { AudioService } from "./AudioService.js";
@@ -319,7 +324,7 @@
         const startModal = document.getElementById("startModal");
         const startBtn = document.getElementById("startBtn");
         const difficultyOptions = document.querySelectorAll('.difficulty-option');
-        const botCheckbox = document.getElementById("botEnabled");
+        const botModeSelect = document.getElementById("botMode");
         const query = new URLSearchParams(window.location.search);
         const automatedCollection = query.get('collectData') === '1';
         const collectionTarget = Math.max(1, Number.parseInt(query.get('collectTarget'), 10) || 50000);
@@ -403,7 +408,7 @@
             audio.playMenuAmbience();
         };
 
-        const startGame = (botMode, collectAutomatically) => {
+        const startGame = (botMode, collectAutomatically, botType = 'heuristic') => {
             window.removeEventListener('click', startAmbience);
             window.removeEventListener('keydown', startAmbience);
             audio.stopMenuAmbience();
@@ -416,7 +421,7 @@
                 selectedDifficulty,
                 returnToMenu,
                 botMode,
-                { automatedCollection: collectAutomatically }
+                { automatedCollection: collectAutomatically, botType }
             );
 
             if (collectAutomatically) {
@@ -468,7 +473,8 @@
 
         startBtn.onclick = e => {
             if (e) e.stopPropagation();
-            startGame(botCheckbox.checked, false);
+            const botType = botModeSelect.value;
+            startGame(botType !== 'off', false, botType);
         };
 
         if (automatedCollection) startGame(true, true);

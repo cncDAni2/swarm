@@ -5,6 +5,7 @@ import { Boss } from './ai/Boss.js';
 import { createPlayerShotLane } from './ai/playerShotEvasion.js';
 import { applyTankPhysics } from './tankPhysics.js';
 import { PlayerBot } from './ai/PlayerBot.js';
+import { NeuralPlayerBot } from './ai/NeuralPlayerBot.js';
 import { BotObservationEncoder } from './ai/BotObservationEncoder.js';
 import { BOT_DECISION_INTERVAL_MS } from './ai/BotModelSchema.js';
 import { encodeTeacherAction, EpisodeRecorder, RewardTracker } from './ai/BotTraining.js';
@@ -20,12 +21,15 @@ export class Game {
         this.difficulty = difficulty;
         this.onMainMenu = onMainMenu;
         this.botMode = botMode;
-        this.bot = botMode ? new PlayerBot(this) : null;
+        this.botType = options.botType || 'heuristic';
+        this.bot = botMode
+            ? this.botType === 'neural' ? new NeuralPlayerBot(this) : new PlayerBot(this)
+            : null;
         this.botInput = null;
         this.lastBotDecisionTime = -Infinity;
         this.observationEncoder = botMode ? new BotObservationEncoder() : null;
         this.rewardTracker = botMode ? new RewardTracker() : null;
-        this.episodeRecorder = botMode ? this.createEpisodeRecorder() : null;
+        this.episodeRecorder = botMode && this.botType === 'heuristic' ? this.createEpisodeRecorder() : null;
         
         // Difficulty settings
         let maxHP = 100;
@@ -268,7 +272,7 @@ export class Game {
         this.botInput = null;
         this.lastBotDecisionTime = -Infinity;
         if (this.rewardTracker) this.rewardTracker.reset();
-        if (this.botMode) this.episodeRecorder = this.createEpisodeRecorder();
+        if (this.botMode && this.botType === 'heuristic') this.episodeRecorder = this.createEpisodeRecorder();
         
         if (fromStart) {
             this.round = 0;
