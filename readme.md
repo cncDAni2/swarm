@@ -1,6 +1,7 @@
 # SWARM Game
 
 A top-down swarm shooter implementation using vanilla JavaScript and HTML5 Canvas.
+Built itch.io link: https://cncdani2.itch.io/swarm-test-project
 
 ## Local Development Setup
 
