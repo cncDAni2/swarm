@@ -10,6 +10,7 @@
     "build": "electron-builder",
     "create-initial-model": "node training/createInitialModel.cjs",
     "check-training-data": "node training/checkTrainingData.cjs",
+    "train-imitation": "node training/trainImitation.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {

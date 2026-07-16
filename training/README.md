@@ -37,6 +37,20 @@ npm run create-initial-model
 
 For an RTX 5070, the trainer can run from this same checkout in Linux or WSL2. Install a current NVIDIA driver, CUDA libraries compatible with the installed TensorFlow.js Node GPU package, Node.js LTS, and then install `@tensorflow/tfjs-node-gpu` in that environment. The game itself does not need this native package.
 
+Train the first policy after collection with:
+
+```powershell
+npm install --no-save @tensorflow/tfjs-node-gpu
+npm run train-imitation
+```
+
+The trainer automatically reads `%APPDATA%\swarm\training\episodes` and exports the policy to `training/models/imitation-policy`. It uses the GPU package when installed, otherwise falls back to CPU. Optional parameters are available for a different data folder or training duration:
+
+```powershell
+npm run train-imitation -- --epochs 40 --batch-size 1024
+npm run train-imitation -- --data "C:\path\to\episodes" --output "C:\path\to\model"
+```
+
 The trainer reads the JSONL episodes, trains on the GPU, and exports `model.json`, `weights.bin`, and an updated `metadata.json`. Those three files are the model artifact to import back into the Electron game.
 
 Each JSONL line is one imitation-learning transition: current observation (`state`), the heuristic bot's discrete action (`action`), reward, next observation (`nextState`), and the terminal flag (`done`). The first trainer will use `state` and `action` to reproduce the heuristic bot, then later reinforcement learning can use reward, nextState, and done to improve it.
