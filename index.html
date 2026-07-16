@@ -327,6 +327,7 @@
         const botModeSelect = document.getElementById("botMode");
         const query = new URLSearchParams(window.location.search);
         const automatedCollection = query.get('collectData') === '1';
+        const collectionPolicy = query.get('collectPolicy') || 'heuristic';
         const collectionTarget = Math.max(1, Number.parseInt(query.get('collectTarget'), 10) || 50000);
         const simulationStepsPerFrame = 30;
         
@@ -408,7 +409,7 @@
             audio.playMenuAmbience();
         };
 
-        const startGame = (botMode, collectAutomatically, botType = 'heuristic') => {
+        const startGame = (botMode, collectAutomatically, botType = 'heuristic', collectNeuralRollouts = false) => {
             window.removeEventListener('click', startAmbience);
             window.removeEventListener('keydown', startAmbience);
             audio.stopMenuAmbience();
@@ -421,7 +422,7 @@
                 selectedDifficulty,
                 returnToMenu,
                 botMode,
-                { automatedCollection: collectAutomatically, botType }
+                { automatedCollection: collectAutomatically, botType, collectNeuralRollouts }
             );
 
             if (collectAutomatically) {
@@ -477,7 +478,9 @@
             startGame(botType !== 'off', false, botType);
         };
 
-        if (automatedCollection) startGame(true, true);
+        if (automatedCollection) {
+            startGame(true, true, collectionPolicy, collectionPolicy === 'neural');
+        }
     </script>
 </body>
 </html>

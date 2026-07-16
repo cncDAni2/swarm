@@ -2,15 +2,22 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 
-function getTrainingDirectory() {
-    return path.join(app.getPath('userData'), 'training', 'episodes');
+function getTrainingDirectory(kind = 'episodes') {
+    return path.join(app.getPath('userData'), 'training', kind);
 }
 
-function getCollectionTarget() {
-    const argumentIndex = process.argv.indexOf('--collect-data');
+const sessionDirectories = new Map();
+
+function getCollectionOptions() {
+    const rolloutIndex = process.argv.indexOf('--collect-rollouts');
+    const dataIndex = process.argv.indexOf('--collect-data');
+    const argumentIndex = rolloutIndex !== -1 ? rolloutIndex : dataIndex;
     if (argumentIndex === -1) return null;
     const requestedTarget = Number.parseInt(process.argv[argumentIndex + 1], 10);
-    return Number.isInteger(requestedTarget) && requestedTarget > 0 ? requestedTarget : 50000;
+    return {
+        target: Number.isInteger(requestedTarget) && requestedTarget > 0 ? requestedTarget : 50000,
+        policy: rolloutIndex !== -1 ? 'neural' : 'heuristic'
+    };
 }
 
 function validateSessionId(sessionId) {
@@ -21,8 +28,9 @@ function validateSessionId(sessionId) {
 
 async function initializeTrainingSession(_event, { sessionId, metadata }) {
     validateSessionId(sessionId);
-    const directory = getTrainingDirectory();
+    const directory = getTrainingDirectory(metadata?.source === 'neural-policy-rollout' ? 'rollouts' : 'episodes');
     await fs.mkdir(directory, { recursive: true });
+    sessionDirectories.set(sessionId, directory);
     await fs.writeFile(
         path.join(directory, `${sessionId}.metadata.json`),
         JSON.stringify(metadata, null, 2),
@@ -34,7 +42,7 @@ async function appendTrainingTransitions(_event, { sessionId, transitions, compl
     validateSessionId(sessionId);
     if (!Array.isArray(transitions)) throw new Error('Training transitions must be an array');
 
-    const directory = getTrainingDirectory();
+    const directory = sessionDirectories.get(sessionId) || getTrainingDirectory();
     await fs.mkdir(directory, { recursive: true });
     const serialized = transitions.map(transition => JSON.stringify(transition)).join('\n');
     if (serialized) {
@@ -42,11 +50,12 @@ async function appendTrainingTransitions(_event, { sessionId, transitions, compl
     }
     if (complete) {
         await fs.writeFile(path.join(directory, `${sessionId}.complete`), '', 'utf8');
+        sessionDirectories.delete(sessionId);
     }
 }
 
 function createWindow() {
-    const collectionTarget = getCollectionTarget();
+    const collection = getCollectionOptions();
     const win = new BrowserWindow({
         width: 1280,
         height: 720,
@@ -58,11 +67,15 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js') // We'll create a dummy preload if needed, or skip it
         },
         backgroundColor: '#000000',
-        title: collectionTarget ? `SWARM Data Collection: 0 / ${collectionTarget}` : 'SWARM'
+        title: collection ? `SWARM ${collection.policy} Collection: 0 / ${collection.target}` : 'SWARM'
     });
 
     win.loadFile('index.html', {
-        query: collectionTarget ? { collectData: '1', collectTarget: String(collectionTarget) } : {}
+        query: collection ? {
+            collectData: '1',
+            collectTarget: String(collection.target),
+            collectPolicy: collection.policy
+        } : {}
     });
     
     // Optional: Open DevTools

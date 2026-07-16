@@ -55,4 +55,17 @@ The trainer reads the JSONL episodes, trains on the GPU, and exports `model.json
 
 Each JSONL line is one imitation-learning transition: current observation (`state`), the heuristic bot's discrete action (`action`), reward, next observation (`nextState`), and the terminal flag (`done`). The first trainer will use `state` and `action` to reproduce the heuristic bot, then later reinforcement learning can use reward, nextState, and done to improve it.
 
+## PPO Fine-Tuning
+
+PPO uses fresh experiences from the currently exported neural policy. Do not mix these files with the heuristic episode data. Collect one rollout batch, train once, then collect a new batch with the resulting policy:
+
+```powershell
+npm run collect-rollouts -- 10000
+npm run train-ppo
+```
+
+Neural rollout files are stored separately in `%APPDATA%\swarm\training\rollouts`. Each line includes the action's old log-probability and value estimate as well as the reward transition. The first PPO training run upgrades the 27-output imitation model to 28 outputs by adding a value head; the game continues to use only the first 27 actor logits.
+
+After a successful PPO update, the trainer archives the consumed rollout files under `rollouts/archive/`, so the next collection command produces a fresh on-policy batch automatically.
+
 After training, start the game normally with `npm run start-exe` and select **Neurális bot** from the bot-mode menu. The game loads `training/models/imitation-policy/model.json` plus its weights automatically. Compare its survival time and reached round to the heuristic bot before beginning reward-based fine-tuning.

@@ -84,31 +84,35 @@ export class EpisodeRecorder {
         }
     }
 
-    recordDecision(observation, action, reward) {
+    recordDecision(observation, action, reward, policy = null) {
         if (!this.enabled) return;
         if (this.pending) {
-            this.buffer.push({
+            const transition = {
                 state: this.pending.observation,
                 action: this.pending.action,
                 reward,
                 nextState: Array.from(observation),
                 done: false
-            });
+            };
+            if (this.pending.policy) transition.policy = this.pending.policy;
+            this.buffer.push(transition);
             this.transitionCount++;
         }
-        this.pending = { observation: Array.from(observation), action };
+        this.pending = { observation: Array.from(observation), action, policy };
         this.flush(false);
     }
 
     finish(finalObservation, reward) {
         if (!this.enabled || !this.pending) return;
-        this.buffer.push({
+        const transition = {
             state: this.pending.observation,
             action: this.pending.action,
-            reward: reward - 1000,
+            reward: reward - 100,
             nextState: Array.from(finalObservation),
             done: true
-        });
+        };
+        if (this.pending.policy) transition.policy = this.pending.policy;
+        this.buffer.push(transition);
         this.transitionCount++;
         this.pending = null;
         this.flush(true);

@@ -7,10 +7,12 @@
     "start": "python -m http.server 4200",
     "start-exe": "electron .",
     "collect-data": "electron . --collect-data",
+    "collect-rollouts": "electron . --collect-rollouts",
     "build": "electron-builder",
     "create-initial-model": "node training/createInitialModel.cjs",
     "check-training-data": "node training/checkTrainingData.cjs",
     "train-imitation": "node training/trainImitation.cjs",
+    "train-ppo": "node training/trainPpo.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {

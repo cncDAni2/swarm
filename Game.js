@@ -22,14 +22,19 @@ export class Game {
         this.onMainMenu = onMainMenu;
         this.botMode = botMode;
         this.botType = options.botType || 'heuristic';
+        this.collectNeuralRollouts = Boolean(options.collectNeuralRollouts);
         this.bot = botMode
-            ? this.botType === 'neural' ? new NeuralPlayerBot(this) : new PlayerBot(this)
+            ? this.botType === 'neural'
+                ? new NeuralPlayerBot(this, { stochastic: this.collectNeuralRollouts })
+                : new PlayerBot(this)
             : null;
         this.botInput = null;
         this.lastBotDecisionTime = -Infinity;
         this.observationEncoder = botMode ? new BotObservationEncoder() : null;
         this.rewardTracker = botMode ? new RewardTracker() : null;
-        this.episodeRecorder = botMode && this.botType === 'heuristic' ? this.createEpisodeRecorder() : null;
+        this.episodeRecorder = botMode && (this.botType === 'heuristic' || this.collectNeuralRollouts)
+            ? this.createEpisodeRecorder()
+            : null;
         
         // Difficulty settings
         let maxHP = 100;
@@ -272,7 +277,9 @@ export class Game {
         this.botInput = null;
         this.lastBotDecisionTime = -Infinity;
         if (this.rewardTracker) this.rewardTracker.reset();
-        if (this.botMode && this.botType === 'heuristic') this.episodeRecorder = this.createEpisodeRecorder();
+        if (this.botMode && (this.botType === 'heuristic' || this.collectNeuralRollouts)) {
+            this.episodeRecorder = this.createEpisodeRecorder();
+        }
         
         if (fromStart) {
             this.round = 0;
@@ -328,12 +335,22 @@ export class Game {
             this.lastBotDecisionTime = currentTime;
 
             if (this.episodeRecorder && this.episodeRecorder.enabled) {
-                const observation = this.observationEncoder.encode(this);
-                this.episodeRecorder.recordDecision(
-                    observation,
-                    encodeTeacherAction(controls, this.player),
-                    this.rewardTracker.consume()
-                );
+                if (this.collectNeuralRollouts && this.bot.lastPolicyDecision) {
+                    const decision = this.bot.lastPolicyDecision;
+                    this.episodeRecorder.recordDecision(
+                        decision.observation,
+                        decision.action,
+                        this.rewardTracker.consume(),
+                        decision.policy
+                    );
+                } else {
+                    const observation = this.observationEncoder.encode(this);
+                    this.episodeRecorder.recordDecision(
+                        observation,
+                        encodeTeacherAction(controls, this.player),
+                        this.rewardTracker.consume()
+                    );
+                }
             }
         }
         return this.botInput;
@@ -341,7 +358,9 @@ export class Game {
 
     createEpisodeRecorder() {
         return new EpisodeRecorder({
-            source: this.automatedCollection ? 'heuristic-player-bot-automated' : 'heuristic-player-bot'
+            source: this.collectNeuralRollouts
+                ? 'neural-policy-rollout'
+                : this.automatedCollection ? 'heuristic-player-bot-automated' : 'heuristic-player-bot'
         });
     }
 
