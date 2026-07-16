@@ -3,6 +3,7 @@ import { Wormhole } from './Wormhole.js';
 import { AudioService } from './AudioService.js';
 import { Boss } from './ai/Boss.js';
 import { createPlayerShotLane } from './ai/playerShotEvasion.js';
+import { applyTankPhysics } from './tankPhysics.js';
 
 export class Game {
     constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null) {
@@ -1028,6 +1029,9 @@ export class Game {
                         b.detonationStartTime = currentTime;
                         b.vx = 0;
                         b.vy = 0;
+                        b.forwardSpeed = 0;
+                        b.moveIntentX = 0;
+                        b.moveIntentY = 0;
                     }
                     if (currentTime - b.detonationStartTime >= 500) {
                         // Massive 300 unit explosion
@@ -1071,39 +1075,59 @@ export class Game {
 
             if (b.isDetonating) continue;
 
-            // Homing logic for sky-pulse bullets
-            if (b.preHomingTarget) {
-                const dx = b.preHomingTarget.x - b.x;
-                const dy = b.preHomingTarget.y - b.y;
+            // Sky-pulse rockets: tank-style facing thrust + rate-limited turns.
+            // noSlowdown: accel to max and hold (no turn-brake / friction).
+            // Steering sets moveIntent; applyTankPhysics integrates motion.
+            if (b.useTankPhysics && (b.isHoming || b.preHomingTarget)) {
+                let tx = this.player.x;
+                let ty = this.player.y;
+                let cruiseMax = b.maxSpeed != null ? b.maxSpeed : 2.5;
+
+                if (b.preHomingTarget) {
+                    const dx = b.preHomingTarget.x - b.x;
+                    const dy = b.preHomingTarget.y - b.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 40) {
+                        // Reach waypoint → switch to player lock
+                        delete b.preHomingTarget;
+                        b.isHoming = true;
+                        tx = this.player.x;
+                        ty = this.player.y;
+                    } else {
+                        tx = b.preHomingTarget.x;
+                        ty = b.preHomingTarget.y;
+                        // Pre-homing rush: higher speed cap (was snap-to 4.0)
+                        cruiseMax = b.rushMaxSpeed != null ? b.rushMaxSpeed : 4.0;
+                    }
+                }
+
+                const dx = tx - b.x;
+                const dy = ty - b.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 40) { // Reach within 40 units to switch
-                    delete b.preHomingTarget;
-                    b.isHoming = true;
+                if (dist > 0.001) {
+                    b.moveIntentX = dx / dist;
+                    b.moveIntentY = dy / dist;
                 } else {
-                    const rushSpeed = 4.0; 
-                    b.vx = (dx / dist) * rushSpeed;
-                    b.vy = (dy / dist) * rushSpeed;
+                    b.moveIntentX = 0;
+                    b.moveIntentY = 0;
                 }
-            } else if (b.isHoming) {
-                const dx = this.player.x - b.x;
-                const dy = this.player.y - b.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 0) {
-                    const homingSpeed = 2.5; // Adjusted speed for homing bullets
-                    b.vx = (dx / dist) * homingSpeed;
-                    b.vy = (dy / dist) * homingSpeed;
+
+                // Temporarily raise cap for pre-homing rush without mutating base maxSpeed
+                const baseMax = b.maxSpeed;
+                b.maxSpeed = cruiseMax;
+                applyTankPhysics(b, deltaTime);
+                b.maxSpeed = baseMax;
+            } else {
+                // Boss Spiral logic (Linear expansion for the stream)
+                if (b.ownerType === 'boss-spiral') {
+                    const baseSpeed = 1.5;
+                    b.vx = Math.cos(b.spiralAngle) * baseSpeed;
+                    b.vy = Math.sin(b.spiralAngle) * baseSpeed;
                 }
-            }
 
-            // Boss Spiral logic (Linear expansion for the stream)
-            if (b.ownerType === 'boss-spiral') {
-                const baseSpeed = 1.5;
-                b.vx = Math.cos(b.spiralAngle) * baseSpeed;
-                b.vy = Math.sin(b.spiralAngle) * baseSpeed;
+                b.x += b.vx;
+                b.y += b.vy;
             }
-
-            b.x += b.vx;
-            b.y += b.vy;
             let hit = false;
             
             if (b.ownerType === 'enemy' || b.ownerType === 'sky-pulse' || b.ownerType === 'boss-spiral') {
@@ -1117,6 +1141,9 @@ export class Game {
                             b.detonationStartTime = currentTime;
                             b.vx = 0;
                             b.vy = 0;
+                            b.forwardSpeed = 0;
+                            b.moveIntentX = 0;
+                            b.moveIntentY = 0;
                             let dmg = 15;
                             if (this.damageResistTimer > 0) {
                                 dmg *= 0.2;
@@ -1564,7 +1591,10 @@ export class Game {
                     this.ctx.fill();
                     this.ctx.restore();
                 } else {
-                    const angle = Math.atan2(b.vy, b.vx);
+                    // Prefer facing from tank physics; fall back to velocity
+                    const angle = (b.facing != null && Number.isFinite(b.facing))
+                        ? b.facing
+                        : Math.atan2(b.vy, b.vx);
                     this.ctx.save();
                     this.ctx.translate(b.x, b.y);
                     this.ctx.rotate(angle);

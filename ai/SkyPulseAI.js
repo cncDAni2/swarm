@@ -104,16 +104,44 @@ export class SkyPulseAI {
 
         this.owner.setLookTarget(player.x, player.y);
 
-        // Homing / pre-homing rocket (within 1000 range)
+        // Homing / pre-homing rocket (within 1000 range).
+        // Same forward-only force model as enemies, but noSlowdown: always
+        // accelerates to max and never brakes/coasts (see tankPhysics.js).
         if (distToPlayer < 1000 && currentTime - this.lastShotTime > this.fireRate) {
             const angle = Math.atan2(dy, dx);
             const rand = Math.random();
-            
+            const launchSpeed = 1.5;
+
+            // Cruise 2.5 / pre-homing rush 4.0. Turn rates 2× enemy baseline.
+            const rocketPhys = {
+                maxSpeed: 6.5,
+                rushMaxSpeed: 6.5,
+                accel: 0.48,
+                friction: 0,   // unused while noSlowdown
+                brake: 0,      // unused while noSlowdown
+                turnDegPerSecMax: 550,
+                turnDegPerSecMin: 180
+            };
+
             let bulletProps = {
                 x: this.owner.x,
                 y: this.owner.y,
-                vx: Math.cos(angle) * 1.5,
-                vy: Math.sin(angle) * 1.5,
+                // Tank body state (force physics integrates these)
+                facing: angle,
+                forwardSpeed: launchSpeed,
+                vx: Math.cos(angle) * launchSpeed,
+                vy: Math.sin(angle) * launchSpeed,
+                moveIntentX: Math.cos(angle),
+                moveIntentY: Math.sin(angle),
+                maxSpeed: rocketPhys.maxSpeed,
+                rushMaxSpeed: rocketPhys.rushMaxSpeed,
+                accel: rocketPhys.accel,
+                friction: rocketPhys.friction,
+                brake: rocketPhys.brake,
+                turnDegPerSecMax: rocketPhys.turnDegPerSecMax,
+                turnDegPerSecMin: rocketPhys.turnDegPerSecMin,
+                noSlowdown: true, // accel to max only; never lose speed turning
+                useTankPhysics: true,
                 radius: 12,
                 color: 'cyan',
                 ownerType: 'sky-pulse',

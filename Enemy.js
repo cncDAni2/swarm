@@ -3,6 +3,11 @@ import { BasicRiflemanAI } from './ai/BasicRiflemanAI.js';
 import { FlankerAI } from './ai/FlankerAI.js';
 import { SkyPulseAI } from './ai/SkyPulseAI.js';
 import { ReviAI } from './ai/ReviAI.js';
+import {
+    applyTankPhysics,
+    syncForwardSpeedFromVelocity,
+    syncVelocityFromFacing
+} from './tankPhysics.js';
 
 // Tank-style physics: thrust only along facing.
 //
@@ -13,6 +18,7 @@ import { ReviAI } from './ai/ReviAI.js';
 //   turnDegPerSecMax = when stopped (can pivot faster)
 //   turnDegPerSecMin = at full forwardSpeed (wide arcs)
 // Example: 90 ≈ quarter-turn per second while stationary.
+// Shared with SkyPulse rockets via tankPhysics.js.
 const PHYSICS_BY_TYPE = {
     melee:       { maxSpeed: 2, accel: 0.32, friction: 0.12, brake: 0.22, turnDegPerSecMax: 360, turnDegPerSecMin: 70 },
     rifleman:    { maxSpeed: 1.7, accel: 0.26, friction: 0.12, brake: 0.22, turnDegPerSecMax: 360, turnDegPerSecMin: 70 },
@@ -20,16 +26,6 @@ const PHYSICS_BY_TYPE = {
     'sky-pulse': { maxSpeed: 2.4, accel: 0.48, friction: 0.10, brake: 0.24, turnDegPerSecMax: 360, turnDegPerSecMin: 80 },
     revi:        { maxSpeed: 2.5, accel: 0.40, friction: 0.12, brake: 0.22, turnDegPerSecMax: 360, turnDegPerSecMin: 120 }
 };
-
-// Only slow down to turn when the heading error exceeds this (30°).
-const TURN_BRAKE_THRESHOLD = Math.PI / 6;
-const DEG2RAD = Math.PI / 180;
-
-function wrapAngle(a) {
-    while (a > Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
-    return a;
-}
 
 export class Enemy {
     constructor(x, y, type, shieldExpiry = 0) {
@@ -117,8 +113,7 @@ export class Enemy {
 
     /** Keep vx/vy = forward vector * scalar speed (forward-only). */
     syncVelocityFromFacing() {
-        this.vx = Math.cos(this.facing) * this.forwardSpeed;
-        this.vy = Math.sin(this.facing) * this.forwardSpeed;
+        syncVelocityFromFacing(this);
     }
 
     /**
@@ -126,111 +121,11 @@ export class Enemy {
      * speed from the component along facing (never reverse).
      */
     syncForwardSpeedFromVelocity() {
-        const along = this.vx * Math.cos(this.facing) + this.vy * Math.sin(this.facing);
-        this.forwardSpeed = Math.max(0, along);
-        this.syncVelocityFromFacing();
+        syncForwardSpeedFromVelocity(this);
     }
 
     applyPhysics(deltaTime) {
-        // Movement uses player-style frame units; turning uses real seconds.
-        const dtMs = Math.max(0, Math.min(64, deltaTime)); // match game loop clamp
-        const scale = dtMs / 16;
-        const dtSec = dtMs / 1000;
-
-        const intentLen = Math.sqrt(
-            this.moveIntentX * this.moveIntentX + this.moveIntentY * this.moveIntentY
-        );
-
-        // --- Desired heading ---
-        // Driving: turn toward travel intent. Idle: optional look target.
-        let desiredHeading = null;
-        let wantThrottle = 0;
-
-        if (intentLen > 0.01) {
-            desiredHeading = Math.atan2(this.moveIntentY, this.moveIntentX);
-            wantThrottle = Math.min(1, intentLen);
-        } else if (this.lookTargetX != null && this.lookTargetY != null) {
-            desiredHeading = Math.atan2(
-                this.lookTargetY - this.y,
-                this.lookTargetX - this.x
-            );
-            wantThrottle = 0;
-        }
-
-        // Heading error (shortest path)
-        let headingError = 0;
-        if (desiredHeading != null) {
-            headingError = wrapAngle(desiredHeading - this.facing);
-        }
-        const absError = Math.abs(headingError);
-
-        // --- Speed-dependent turn rate (deg/s → rad this frame) ---
-        // Max when stopped, min at full speed — linear blend.
-        const speedRatio = this.maxSpeed > 0
-            ? Math.min(1, Math.max(0, this.forwardSpeed / this.maxSpeed))
-            : 0;
-        const turnDegPerSec =
-            this.turnDegPerSecMax * (1 - speedRatio) +
-            this.turnDegPerSecMin * speedRatio;
-        // Cap step so a lag spike can never snap more than ~this much.
-        const maxTurnRad = Math.max(0, turnDegPerSec) * DEG2RAD * dtSec;
-
-        // --- Intelligent brake: only if we must turn more than 30° ---
-        let throttle = wantThrottle;
-        let hardBrake = false;
-        if (desiredHeading != null && absError > TURN_BRAKE_THRESHOLD) {
-            hardBrake = true;
-            // Blend throttle down as error grows past 30° (zero near 90°+)
-            const t = Math.min(
-                1,
-                (absError - TURN_BRAKE_THRESHOLD) / (Math.PI / 2 - TURN_BRAKE_THRESHOLD)
-            );
-            throttle = wantThrottle * (1 - t);
-        }
-
-        // Apply turn — never snap to desiredHeading; always rate-limit.
-        if (
-            desiredHeading != null &&
-            headingError !== 0 &&
-            maxTurnRad > 0 &&
-            Number.isFinite(maxTurnRad)
-        ) {
-            const step = Math.min(absError, maxTurnRad);
-            this.facing = wrapAngle(this.facing + Math.sign(headingError) * step);
-        }
-
-        // --- Forward-only speed integration ---
-        if (hardBrake) {
-            // Extra deceleration so we can regain turn rate
-            this.forwardSpeed -= this.brake * scale;
-            if (this.forwardSpeed < 0) this.forwardSpeed = 0;
-        }
-
-        if (throttle > 0.01) {
-            this.forwardSpeed += this.accel * throttle * scale;
-        } else if (!hardBrake) {
-            // Normal coast / friction when not pushing
-            const frictionFactor = 1 - this.friction * scale;
-            this.forwardSpeed *= Math.max(0, frictionFactor);
-            if (this.forwardSpeed < 0.02) this.forwardSpeed = 0;
-        } else {
-            // Already braked above; light extra drag
-            const frictionFactor = 1 - this.friction * 0.5 * scale;
-            this.forwardSpeed *= Math.max(0, frictionFactor);
-        }
-
-        // dodgeSpeedMul (e.g. 2 during Flanker/SkyPulse dodge dash) raises the cap temporarily
-        const speedCap = this.maxSpeed * (this.dodgeSpeedMul > 1 ? this.dodgeSpeedMul : 1);
-        if (this.forwardSpeed > speedCap) {
-            this.forwardSpeed = speedCap;
-        }
-        if (this.forwardSpeed < 0) this.forwardSpeed = 0;
-
-        // Velocity is strictly along facing — no strafe component
-        this.syncVelocityFromFacing();
-
-        this.x += this.vx * scale;
-        this.y += this.vy * scale;
+        applyTankPhysics(this, deltaTime);
     }
 
     update(player, enemies, bullets, currentTime, deltaTime, spawnBullet, canvasWidth, canvasHeight, barriers, lineRectIntersect) {
