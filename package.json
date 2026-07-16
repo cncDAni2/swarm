@@ -4,7 +4,8 @@
   "description": "A top-down swarm shooter implementation using vanilla JavaScript and HTML5 Canvas.",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "python -m http.server 4200",
+    "start-exe": "electron .",
     "build": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

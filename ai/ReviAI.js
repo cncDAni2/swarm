@@ -1,7 +1,8 @@
 export class ReviAI {
     constructor(owner) {
         this.owner = owner;
-        this.speed = 2.5;
+        // Legacy field: maxSpeed now lives on Enemy; kept for any external readers.
+        this.speed = owner.maxSpeed;
         this.phase = 'RANDOM_MOVE'; // 'RANDOM_MOVE', 'TARGETING', 'ATTACK'
         this.phaseStartTime = 0;
         this.randomDirection = { x: 0, y: 0 };
@@ -11,10 +12,12 @@ export class ReviAI {
         this.targetPoint = { x: 0, y: 0 };
         this.attackTriggered = false;
         this.attackDuration = 500; // Flash for 500ms
+        this._pendingBounds = null;
     }
 
     update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight, barriers, lineRectIntersect) {
         if (this.phaseStartTime === 0) this.phaseStartTime = currentTime;
+        this._pendingBounds = { canvasWidth, canvasHeight };
 
         if (this.phase === 'RANDOM_MOVE') {
             if (this.randomDirection.x === 0 && this.randomDirection.y === 0) {
@@ -52,11 +55,18 @@ export class ReviAI {
                 this.lastDirectionChangeTime = currentTime;
             }
             
-            this.move(this.randomDirection.x, this.randomDirection.y);
-            this.keepInBounds(canvasWidth, canvasHeight);
+            // Intent from unit heading (physics applies accel / maxSpeed)
+            this.owner.setMoveIntent(this.randomDirection.x, this.randomDirection.y);
+            this.owner.setLookTarget(
+                this.owner.x + this.randomDirection.x,
+                this.owner.y + this.randomDirection.y
+            );
 
         } else if (this.phase === 'TARGETING') {
             this.targetPoint = { x: player.x, y: player.y };
+            // Brake while locking on
+            this.owner.setMoveIntent(0, 0);
+            this.owner.setLookTarget(player.x, player.y);
             
             if (currentTime - this.phaseStartTime > 2000) {
                 this.phase = 'ATTACK';
@@ -64,6 +74,8 @@ export class ReviAI {
                 this.attackTriggered = true;
             }
         } else if (this.phase === 'ATTACK') {
+            this.owner.setMoveIntent(0, 0);
+            this.owner.setLookTarget(this.targetPoint.x, this.targetPoint.y);
             if (currentTime - this.phaseStartTime > this.attackDuration) {
                 this.phase = 'RANDOM_MOVE';
                 this.phaseStartTime = currentTime;
@@ -74,43 +86,53 @@ export class ReviAI {
 
     setRandomDirection() {
         const angle = Math.random() * Math.PI * 2;
+        // Unit direction; Enemy physics scales by accel/maxSpeed
         this.randomDirection = {
-            x: Math.cos(angle) * this.speed,
-            y: Math.sin(angle) * this.speed
+            x: Math.cos(angle),
+            y: Math.sin(angle)
         };
     }
 
-    move(vx, vy) {
-        this.owner.x += vx;
-        this.owner.y += vy;
-    }
+    /** Clamp after physics; bounce intent/velocity off edges. */
+    applyBoundsAfterPhysics() {
+        const b = this._pendingBounds;
+        if (!b || !b.canvasWidth || !b.canvasHeight) return;
 
-    keepInBounds(canvasWidth, canvasHeight) {
-        const margin = 60; // Slightly larger margin to ensure they don't get stuck on edges
+        const margin = 60;
+        const o = this.owner;
         let bounced = false;
 
-        if (this.owner.x < margin) {
-            this.owner.x = margin;
-            this.randomDirection.x = Math.abs(this.randomDirection.x);
+        if (o.x < margin) {
+            o.x = margin;
+            if (o.vx < 0) o.vx = -o.vx * 0.5;
+            this.randomDirection.x = Math.abs(this.randomDirection.x) || 1;
             bounced = true;
-        } else if (canvasWidth && this.owner.x > canvasWidth - margin) {
-            this.owner.x = canvasWidth - margin;
-            this.randomDirection.x = -Math.abs(this.randomDirection.x);
+        } else if (o.x > b.canvasWidth - margin) {
+            o.x = b.canvasWidth - margin;
+            if (o.vx > 0) o.vx = -o.vx * 0.5;
+            this.randomDirection.x = -Math.abs(this.randomDirection.x || 1);
             bounced = true;
         }
 
-        if (this.owner.y < margin) {
-            this.owner.y = margin;
-            this.randomDirection.y = Math.abs(this.randomDirection.y);
+        if (o.y < margin) {
+            o.y = margin;
+            if (o.vy < 0) o.vy = -o.vy * 0.5;
+            this.randomDirection.y = Math.abs(this.randomDirection.y) || 1;
             bounced = true;
-        } else if (canvasHeight && this.owner.y > canvasHeight - margin) {
-            this.owner.y = canvasHeight - margin;
-            this.randomDirection.y = -Math.abs(this.randomDirection.y);
+        } else if (o.y > b.canvasHeight - margin) {
+            o.y = b.canvasHeight - margin;
+            if (o.vy > 0) o.vy = -o.vy * 0.5;
+            this.randomDirection.y = -Math.abs(this.randomDirection.y || 1);
             bounced = true;
         }
 
         if (bounced) {
-            this.lastDirectionChangeTime = Date.now(); // Internal state vs game time but we'll use a flag or just keep it simple
+            // Re-normalize bounce direction
+            const len = Math.sqrt(
+                this.randomDirection.x ** 2 + this.randomDirection.y ** 2
+            ) || 1;
+            this.randomDirection.x /= len;
+            this.randomDirection.y /= len;
         }
     }
 }

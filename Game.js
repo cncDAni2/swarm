@@ -1,7 +1,7 @@
 import { Enemy } from './Enemy.js';
 import { Wormhole } from './Wormhole.js';
 import { AudioService } from './AudioService.js';
-import { Boss } from './Boss.js';
+import { Boss } from './ai/Boss.js';
 
 export class Game {
     constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null) {
@@ -56,6 +56,21 @@ export class Game {
         this.mousePos = { x: 0, y: 0 };
         this.kills = 0;
         this.boss = null;
+
+        // Right-click electric beam weapon
+        this.electricBeam = {
+            isCharging: false,
+            chargeStartTime: 0,
+            chargeDuration: 500,
+            energyCost: 25,
+            aoeRadius: 250,
+            aoeDamage: 25,
+            beamWidth: 50,
+            beamDamage: 15,
+            angle: 0,
+            // Post-fire visuals (null when inactive)
+            effect: null // { startTime, duration, angle, lightningTargets: [{x,y}] }
+        };
 
         // Asset Loading
         this.assets = {
@@ -189,6 +204,7 @@ export class Game {
         window.removeEventListener('mousedown', this._boundMouseDown);
         window.removeEventListener('mouseup', this._boundMouseUp);
         window.removeEventListener('mousemove', this._boundMouseMove);
+        window.removeEventListener('contextmenu', this._boundContextMenu);
         window.removeEventListener('blur', this._boundBlur);
         window.removeEventListener('focus', this._boundFocus);
     }
@@ -218,6 +234,8 @@ export class Game {
         this.explosions = [];
         this.wormholes = [];
         this.boss = null;
+        this.electricBeam.isCharging = false;
+        this.electricBeam.effect = null;
         
         if (fromStart) {
             this.round = 0;
@@ -236,15 +254,22 @@ export class Game {
         this._boundKeyDown = e => this.keys[e.code] = true;
         this._boundKeyUp = e => this.keys[e.code] = false;
         this._boundMouseDown = e => {
-            this.isMouseDown = true;
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
+            if (e.button === 0) {
+                this.isMouseDown = true;
+            } else if (e.button === 2) {
+                this.tryStartElectricBeam();
+            }
         };
-        this._boundMouseUp = () => this.isMouseDown = false;
+        this._boundMouseUp = e => {
+            if (e.button === 0) this.isMouseDown = false;
+        };
         this._boundMouseMove = e => {
             this.mousePos.x = e.clientX;
             this.mousePos.y = e.clientY;
         };
+        this._boundContextMenu = e => e.preventDefault();
         this._boundBlur = () => { this.paused = true; };
         this._boundFocus = () => { this.paused = false; };
 
@@ -253,8 +278,250 @@ export class Game {
         window.addEventListener('mousedown', this._boundMouseDown);
         window.addEventListener('mouseup', this._boundMouseUp);
         window.addEventListener('mousemove', this._boundMouseMove);
+        window.addEventListener('contextmenu', this._boundContextMenu);
         window.addEventListener('blur', this._boundBlur);
         window.addEventListener('focus', this._boundFocus);
+    }
+
+    tryStartElectricBeam() {
+        if (this.gameOver || this.paused) return;
+        if (this.electricBeam.isCharging) return;
+        if (this.player.isExhausted) return;
+        if (this.player.energy < this.electricBeam.energyCost) return;
+
+        this.player.energy = Math.max(0, this.player.energy - this.electricBeam.energyCost);
+        if (this.player.energy === 0) {
+            this.player.isExhausted = true;
+        }
+        this.player.lastShootInteractionTime = this.gameTime;
+        this.player.vx = 0;
+        this.player.vy = 0;
+
+        const dx = this.mousePos.x - this.player.x;
+        const dy = this.mousePos.y - this.player.y;
+        this.electricBeam.angle = Math.atan2(dy, dx);
+        this.electricBeam.isCharging = true;
+        this.electricBeam.chargeStartTime = this.gameTime;
+        // No sound for this weapon
+    }
+
+    fireElectricBeam(currentTime) {
+        const eb = this.electricBeam;
+        const px = this.player.x;
+        const py = this.player.y;
+        const ux = Math.cos(eb.angle);
+        const uy = Math.sin(eb.angle);
+        const halfWidth = eb.beamWidth / 2;
+        const beamRange = Math.hypot(this.canvas.width, this.canvas.height) * 1.5;
+
+        const lightningTargets = [];
+
+        // Surrounding (AoE) damage + lightning targets
+        for (let j = this.enemies.length - 1; j >= 0; j--) {
+            const e = this.enemies[j];
+            if (currentTime < e.shieldExpiry) continue;
+            const dist = Math.hypot(e.x - px, e.y - py);
+            if (dist <= eb.aoeRadius + e.size / 2) {
+                lightningTargets.push({ x: e.x, y: e.y });
+                this.damageEnemyEntity(e, eb.aoeDamage, currentTime);
+            }
+        }
+
+        // Boss AoE
+        if (this.boss) {
+            const distBoss = Math.hypot(this.boss.x - px, this.boss.y - py);
+            if (distBoss <= eb.aoeRadius + this.boss.size / 2) {
+                lightningTargets.push({ x: this.boss.x, y: this.boss.y });
+                this.damageBossEntity(eb.aoeDamage, currentTime, px, py);
+            }
+        }
+
+        // Beam damage (50 unit wide ray toward aim angle)
+        for (let j = this.enemies.length - 1; j >= 0; j--) {
+            const e = this.enemies[j];
+            if (currentTime < e.shieldExpiry) continue;
+            if (this.isInElectricBeam(e.x, e.y, e.size / 2, px, py, ux, uy, halfWidth, beamRange)) {
+                this.damageEnemyEntity(e, eb.beamDamage, currentTime);
+            }
+        }
+
+        if (this.boss && this.isInElectricBeam(
+            this.boss.x, this.boss.y, this.boss.size / 2, px, py, ux, uy, halfWidth, beamRange
+        )) {
+            this.damageBossEntity(eb.beamDamage, currentTime, px + ux * 40, py + uy * 40);
+        }
+
+        eb.effect = {
+            startTime: currentTime,
+            duration: 280,
+            angle: eb.angle,
+            lightningTargets
+        };
+        this.player.shootVisualTimer = 150;
+    }
+
+    isInElectricBeam(ex, ey, entityRadius, px, py, ux, uy, halfWidth, beamRange) {
+        const vpx = ex - px;
+        const vpy = ey - py;
+        const proj = vpx * ux + vpy * uy;
+        if (proj < 0 || proj > beamRange) return false;
+        const closestX = px + ux * proj;
+        const closestY = py + uy * proj;
+        const distToLine = Math.hypot(ex - closestX, ey - closestY);
+        return distToLine < halfWidth + entityRadius;
+    }
+
+    damageEnemyEntity(e, damage, currentTime) {
+        // Entity may already be removed if a prior hit killed it this frame
+        if (!this.enemies.includes(e)) return;
+        const j = this.enemies.indexOf(e);
+        e.health -= damage;
+        e.lastTimeHitByPlayer = this.gameTime;
+        this.damageSplashes.push({
+            x: e.x,
+            y: e.y,
+            target: e,
+            offsetX: 0,
+            offsetY: 0,
+            createdAt: currentTime
+        });
+        if (e.health <= 0) {
+            this.explosions.push({ x: e.x, y: e.y, life: 0.8, decay: 0.08, maxRadius: 30 });
+            this.kills++;
+            this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + 3);
+            this.enemies.splice(j, 1);
+        }
+    }
+
+    damageBossEntity(damage, currentTime, hitX, hitY) {
+        if (!this.boss) return;
+        const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
+        if (isBossInitialImmune || this.boss.isInvulnerable) return;
+
+        this.boss.health -= damage;
+        this.explosions.push({ x: hitX, y: hitY, life: 0.5, decay: 0.1, maxRadius: 20 });
+        this.damageSplashes.push({
+            x: hitX,
+            y: hitY,
+            target: this.boss,
+            offsetX: hitX - this.boss.x,
+            offsetY: hitY - this.boss.y,
+            createdAt: currentTime
+        });
+    }
+
+    drawLightningBolt(ctx, x1, y1, x2, y2, segments = 8) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        for (let i = 1; i < segments; i++) {
+            const t = i / segments;
+            const jitter = (Math.random() - 0.5) * Math.min(40, len * 0.12);
+            const fade = 1 - Math.abs(t - 0.5) * 0.6;
+            ctx.lineTo(
+                x1 + dx * t + nx * jitter * fade,
+                y1 + dy * t + ny * jitter * fade
+            );
+        }
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    }
+
+    drawElectricBeamEffects(ctx, currentTime) {
+        const eb = this.electricBeam;
+        const px = this.player.x;
+        const py = this.player.y;
+        const beamLen = Math.hypot(this.canvas.width, this.canvas.height) * 1.5;
+
+        if (eb.isCharging) {
+            const elapsed = currentTime - eb.chargeStartTime;
+            const progress = Math.min(1, Math.max(0, elapsed / eb.chargeDuration));
+            const pulse = 0.35 + progress * 0.45 + Math.sin(currentTime / 40) * 0.08;
+            const radius = eb.aoeRadius * (0.55 + progress * 0.45);
+
+            // Transparent blue charge circle
+            ctx.save();
+            const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
+            grad.addColorStop(0, `rgba(80, 180, 255, ${0.08 + progress * 0.12})`);
+            grad.addColorStop(0.7, `rgba(40, 140, 255, ${0.12 + progress * 0.18})`);
+            grad.addColorStop(1, 'rgba(40, 140, 255, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = `rgba(100, 200, 255, ${pulse})`;
+            ctx.lineWidth = 2 + progress * 3;
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Transparent blue beam telegraph
+            const endX = px + Math.cos(eb.angle) * beamLen;
+            const endY = py + Math.sin(eb.angle) * beamLen;
+            ctx.save();
+            ctx.strokeStyle = `rgba(80, 170, 255, ${0.15 + progress * 0.25})`;
+            ctx.lineWidth = eb.beamWidth * (0.4 + progress * 0.6);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(160, 220, 255, ${0.2 + progress * 0.35})`;
+            ctx.lineWidth = 4 + progress * 6;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        if (eb.effect) {
+            const age = currentTime - eb.effect.startTime;
+            const fade = Math.max(0, 1 - age / eb.effect.duration);
+            const endX = px + Math.cos(eb.effect.angle) * beamLen;
+            const endY = py + Math.sin(eb.effect.angle) * beamLen;
+
+            // Blue laser beam flash
+            ctx.save();
+            ctx.shadowBlur = 25 * fade;
+            ctx.shadowColor = '#4da6ff';
+            ctx.strokeStyle = `rgba(120, 200, 255, ${0.85 * fade})`;
+            ctx.lineWidth = eb.beamWidth * fade;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(220, 245, 255, ${0.95 * fade})`;
+            ctx.lineWidth = Math.max(4, 14 * fade);
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            ctx.restore();
+
+            // Lightning arcs toward surrounding-hit enemies
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            eb.effect.lightningTargets.forEach(t => {
+                ctx.shadowBlur = 18 * fade;
+                ctx.shadowColor = '#66ccff';
+                ctx.strokeStyle = `rgba(180, 230, 255, ${0.9 * fade})`;
+                ctx.lineWidth = 3 + 2 * fade;
+                this.drawLightningBolt(ctx, px, py, t.x, t.y, 7 + Math.floor(Math.random() * 4));
+                ctx.strokeStyle = `rgba(255, 255, 255, ${0.75 * fade})`;
+                ctx.lineWidth = 1.5;
+                this.drawLightningBolt(ctx, px, py, t.x, t.y, 6);
+            });
+            ctx.restore();
+        }
     }
 
     update(deltaTime) {
@@ -273,38 +540,60 @@ export class Game {
             this.player.shootVisualTimer -= deltaTime;
         }
 
+        // Expire electric beam fire visuals in update (keep draw pure-render)
+        if (this.electricBeam.effect) {
+            const fx = this.electricBeam.effect;
+            if (currentTime - fx.startTime >= fx.duration) {
+                this.electricBeam.effect = null;
+            }
+        }
+
         // Player movement with acceleration and friction
-        let ax = 0;
-        let ay = 0;
-        if (this.keys['KeyW'] || this.keys['ArrowUp']) ay -= this.player.accel;
-        if (this.keys['KeyS'] || this.keys['ArrowDown']) ay += this.player.accel;
-        if (this.keys['KeyA'] || this.keys['ArrowLeft']) ax -= this.player.accel;
-        if (this.keys['KeyD'] || this.keys['ArrowRight']) ax += this.player.accel;
+        // Electric beam: fully stop for the 500ms charge
+        if (this.electricBeam.isCharging) {
+            this.player.vx = 0;
+            this.player.vy = 0;
+            const dxAim = this.mousePos.x - this.player.x;
+            const dyAim = this.mousePos.y - this.player.y;
+            this.electricBeam.angle = Math.atan2(dyAim, dxAim);
 
-        // Normalize acceleration for diagonal movement
-        if (ax !== 0 && ay !== 0) {
-            const mag = Math.sqrt(ax * ax + ay * ay);
-            ax = (ax / mag) * this.player.accel;
-            ay = (ay / mag) * this.player.accel;
+            if (currentTime - this.electricBeam.chargeStartTime >= this.electricBeam.chargeDuration) {
+                this.electricBeam.isCharging = false;
+                this.fireElectricBeam(currentTime);
+            }
+        } else {
+            let ax = 0;
+            let ay = 0;
+            if (this.keys['KeyW'] || this.keys['ArrowUp']) ay -= this.player.accel;
+            if (this.keys['KeyS'] || this.keys['ArrowDown']) ay += this.player.accel;
+            if (this.keys['KeyA'] || this.keys['ArrowLeft']) ax -= this.player.accel;
+            if (this.keys['KeyD'] || this.keys['ArrowRight']) ax += this.player.accel;
+
+            // Normalize acceleration for diagonal movement
+            if (ax !== 0 && ay !== 0) {
+                const mag = Math.sqrt(ax * ax + ay * ay);
+                ax = (ax / mag) * this.player.accel;
+                ay = (ay / mag) * this.player.accel;
+            }
+
+            this.player.vx += ax * (deltaTime / 16);
+            this.player.vy += ay * (deltaTime / 16);
+
+            // Apply friction/drag
+            const frictionFactor = 1 - this.player.friction * (deltaTime / 16);
+            this.player.vx *= Math.max(0, frictionFactor);
+            this.player.vy *= Math.max(0, frictionFactor);
+
+            // Cap speed
+            const currentSpeed = Math.sqrt(this.player.vx * this.player.vx + this.player.vy * this.player.vy);
+            if (currentSpeed > this.player.maxSpeed) {
+                this.player.vx = (this.player.vx / currentSpeed) * this.player.maxSpeed;
+                this.player.vy = (this.player.vy / currentSpeed) * this.player.maxSpeed;
+            }
+
+            this.player.x += this.player.vx * (deltaTime / 16);
+            this.player.y += this.player.vy * (deltaTime / 16);
         }
-
-        this.player.vx += ax * (deltaTime / 16);
-        this.player.vy += ay * (deltaTime / 16);
-
-        // Apply friction/drag
-        const frictionFactor = 1 - this.player.friction * (deltaTime / 16);
-        this.player.vx *= Math.max(0, frictionFactor);
-        this.player.vy *= Math.max(0, frictionFactor);
-
-        // Cap speed
-        const currentSpeed = Math.sqrt(this.player.vx * this.player.vx + this.player.vy * this.player.vy);
-        if (currentSpeed > this.player.maxSpeed) {
-            this.player.vx = (this.player.vx / currentSpeed) * this.player.maxSpeed;
-            this.player.vy = (this.player.vy / currentSpeed) * this.player.maxSpeed;
-        }
-
-        this.player.x += this.player.vx * (deltaTime / 16);
-        this.player.y += this.player.vy * (deltaTime / 16);
 
         // Boss Impassability for Player
         if (this.boss) {
@@ -364,8 +653,8 @@ export class Game {
             this.playedDamageLow = true;
         }
 
-        // Shooting
-        if (this.isMouseDown && currentTime - this.lastShotTime >= this.fireRateDelay && !this.player.isExhausted) {
+        // Shooting (left-click only; blocked while charging electric beam)
+        if (this.isMouseDown && !this.electricBeam.isCharging && currentTime - this.lastShotTime >= this.fireRateDelay && !this.player.isExhausted) {
             const dx = this.mousePos.x - this.player.x;
             const dy = this.mousePos.y - this.player.y;
             const angle = Math.atan2(dy, dx);
@@ -416,15 +705,15 @@ export class Game {
             
             if (isBossRound && !this.boss) {
                 this.boss = new Boss(this.canvas.width, this.canvas.height, currentTime);
+            }
+
+            // Round completion heal based on difficulty
+            if (this.difficulty === 'too-young-to-die') {
+                this.player.health = this.player.maxHealth;
+            } else if (this.difficulty === 'hurt-me-plenty') {
+                this.player.health += 30; // Can overflow
             } else {
-                // Round completion heal based on difficulty
-                if (this.difficulty === 'too-young-to-die') {
-                    this.player.health = this.player.maxHealth;
-                } else if (this.difficulty === 'hurt-me-plenty') {
-                    this.player.health += 30; // Can overflow
-                } else {
-                    this.player.health += 15; // Ultra-violence, can overflow
-                }
+                this.player.health += 15; // Ultra-violence, can overflow
             }
 
             // Energy reset on new round
@@ -1144,6 +1433,9 @@ export class Game {
             this.ctx.stroke();
             this.ctx.restore();
         });
+
+        // Electric beam charge telegraph + fire flash / lightning
+        this.drawElectricBeamEffects(this.ctx, currentTime);
 
         // Draw Player Sprite
         const playerImg = this.player.shootVisualTimer > 0 ? this.assets.playerShoot : this.assets.playerIdle;

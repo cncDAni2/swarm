@@ -1,7 +1,8 @@
 export class BasicMeleeAI {
     constructor(owner) {
         this.owner = owner; // The enemy object this AI controls
-        this.speed = 1.6;
+        // Legacy field: maxSpeed now lives on Enemy; kept for any external readers.
+        this.speed = owner.maxSpeed;
         this.partner = null;
         // Role assigned by Game.redistributeBodyguards(): 'bodyguard' or 'blocker'.
         this.role = 'blocker';
@@ -152,17 +153,18 @@ export class BasicMeleeAI {
             }
         });
 
-        // Combined movement check to never exceed speed
+        // Desired direction (physics on Enemy integrates accel/friction/turn)
         let combinedX = moveX + separationX;
         let combinedY = moveY + separationY;
         const totalDist = Math.sqrt(combinedX * combinedX + combinedY * combinedY);
-        if (totalDist > this.speed) {
-            combinedX = (combinedX / totalDist) * this.speed;
-            combinedY = (combinedY / totalDist) * this.speed;
+        if (totalDist > 0.001) {
+            this.owner.setMoveIntent(combinedX / totalDist, combinedY / totalDist);
+        } else {
+            this.owner.setMoveIntent(0, 0);
         }
 
-        this.owner.x += combinedX;
-        this.owner.y += combinedY;
+        // Look toward the player while chasing / guarding
+        this.owner.setLookTarget(player.x, player.y);
     }
 
     // Decide where this melee should be based on its role.

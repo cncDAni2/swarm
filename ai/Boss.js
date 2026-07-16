@@ -1,4 +1,4 @@
-import { Enemy } from './Enemy.js';
+import { Enemy } from '../Enemy.js';
 
 export class Boss {
     constructor(canvasWidth, canvasHeight, currentTime) {

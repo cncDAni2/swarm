@@ -7,7 +7,8 @@ let flankerSpawnParity = 0;
 export class FlankerAI {
     constructor(owner) {
         this.owner = owner;
-        this.speed = 2.2;
+        // Legacy field: maxSpeed now lives on Enemy; kept for any external readers.
+        this.speed = owner.maxSpeed;
 
         // Orbit variant: +1 clockwise (right), -1 counter-clockwise (left).
         this.orbitDir = (flankerSpawnParity++ % 2 === 0) ? 1 : -1;
@@ -167,22 +168,32 @@ export class FlankerAI {
             else if (this.owner.y > canvasHeight - edgeMargin) moveY -= edgeForce * (1 - (canvasHeight - this.owner.y) / edgeMargin);
         }
 
-        // 7. Apply with speed limit.
+        // 7. Desired direction (physics on Enemy integrates accel/friction/turn)
         const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
-        if (finalMoveDist > this.speed) {
-            this.owner.x += (moveX / finalMoveDist) * this.speed;
-            this.owner.y += (moveY / finalMoveDist) * this.speed;
+        if (finalMoveDist > 0.001) {
+            this.owner.setMoveIntent(moveX / finalMoveDist, moveY / finalMoveDist);
         } else {
-            this.owner.x += moveX;
-            this.owner.y += moveY;
+            this.owner.setMoveIntent(0, 0);
         }
 
-        // 8. Hard clamp as a safety net so we never leave the map.
-        if (canvasWidth && canvasHeight) {
-            const half = this.owner.size / 2;
-            this.owner.x = Math.max(half, Math.min(canvasWidth - half, this.owner.x));
-            this.owner.y = Math.max(half, Math.min(canvasHeight - half, this.owner.y));
-        }
+        // Face along orbit / approach heading (velocity will refine facing over time)
+        this.owner.setLookTarget(player.x, player.y);
+
+        // 8. Soft bounds: kill outward velocity if we would leave the map after physics.
+        // Hard clamp runs in Game/Enemy path after integration via keepInBounds below.
+        this._pendingBounds = { canvasWidth, canvasHeight };
+    }
+
+    /** Called after physics if needed; Flanker clamps in post-step via owner helper. */
+    applyBoundsAfterPhysics() {
+        const b = this._pendingBounds;
+        if (!b || !b.canvasWidth || !b.canvasHeight) return;
+        const half = this.owner.size / 2;
+        const o = this.owner;
+        if (o.x < half) { o.x = half; if (o.vx < 0) o.vx = 0; }
+        else if (o.x > b.canvasWidth - half) { o.x = b.canvasWidth - half; if (o.vx > 0) o.vx = 0; }
+        if (o.y < half) { o.y = half; if (o.vy < 0) o.vy = 0; }
+        else if (o.y > b.canvasHeight - half) { o.y = b.canvasHeight - half; if (o.vy > 0) o.vy = 0; }
     }
 
     // Return a normalized sidestep vector if any rifle is actively requesting this

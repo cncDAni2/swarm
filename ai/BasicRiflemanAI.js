@@ -1,7 +1,8 @@
 export class BasicRiflemanAI {
     constructor(owner) {
         this.owner = owner;
-        this.speed = 1.3; // Slightly faster to keep up with melee but still slower
+        // Legacy field: maxSpeed now lives on Enemy; kept for any external readers.
+        this.speed = owner.maxSpeed;
         this.fireRange = 800;
         this.lastShotTime = 0;
         this.fireRateDelay = 1500; // Standard 1.5s delay between bursts
@@ -130,18 +131,26 @@ export class BasicRiflemanAI {
             }
         });
 
-        // Ensure movement doesn't exceed speed
+        // Desired direction (physics on Enemy integrates accel/friction/turn)
         const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
-        if (finalMoveDist > this.speed) {
-            moveX = (moveX / finalMoveDist) * this.speed;
-            moveY = (moveY / finalMoveDist) * this.speed;
+        if (finalMoveDist > 0.001) {
+            this.owner.setMoveIntent(moveX / finalMoveDist, moveY / finalMoveDist);
+        } else {
+            this.owner.setMoveIntent(0, 0);
         }
-
-        this.owner.x += moveX;
-        this.owner.y += moveY;
 
         // 3. Shooting logic: telegraph -> clear lane -> fire.
         this.updateFireStateMachine(player, enemies, distToPlayer, dx, dy, currentTime, spawnBullet);
+
+        // Face aim lock while telegraphing/firing; otherwise face the player
+        if (
+            (this.fireState === 'aiming' || this.fireState === 'bursting') &&
+            this.lockedTarget
+        ) {
+            this.owner.setLookTarget(this.lockedTarget.x, this.lockedTarget.y);
+        } else {
+            this.owner.setLookTarget(player.x, player.y);
+        }
     }
 
     // Compute the aim point (predictive or direct) for the current burst.

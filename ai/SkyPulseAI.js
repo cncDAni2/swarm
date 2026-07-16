@@ -1,16 +1,22 @@
 export class SkyPulseAI {
     constructor(owner) {
         this.owner = owner;
-        this.speed = 2.4;
+        // Legacy field: maxSpeed now lives on Enemy; kept for any external readers.
+        this.speed = owner.maxSpeed;
         this.targetDist = 500;
         this.lastShotTime = 0;
         this.baseFireRate = 2500; // milliseconds
         this.fireRate = this.baseFireRate * (0.75 + Math.random() * 0.5); // +-25% random
         this.lastEvadeUpdateTime = 0;
         this.evadeWalls = [];
+        this._pendingBounds = null;
     }
 
     update(player, enemies, bullets, currentTime, spawnBullet) {
+        this._pendingBounds = {
+            canvasWidth: window.innerWidth,
+            canvasHeight: window.innerHeight
+        };
         const dx = player.x - this.owner.x;
         const dy = player.y - this.owner.y;
         const distToPlayer = Math.sqrt(dx * dx + dy * dy);
@@ -18,7 +24,7 @@ export class SkyPulseAI {
         let moveX = 0;
         let moveY = 0;
 
-        // Távolság tartása (500 egység)
+        // Hold preferred range (~500)
         if (distToPlayer > this.targetDist + 20) {
             moveX = (dx / distToPlayer) * this.speed;
             moveY = (dy / distToPlayer) * this.speed;
@@ -77,7 +83,7 @@ export class SkyPulseAI {
             }
         });
 
-        // Szétválás csak repülő egységektől
+        // Separation from other flyers only
         const flyers = enemies.filter(e => e.type === 'sky-pulse');
         const separationDist = 50;
         let separationX = 0;
@@ -93,27 +99,28 @@ export class SkyPulseAI {
             }
         });
 
-        // Combined movement check to never exceed speed
         let finalMoveX = moveX + separationX;
         let finalMoveY = moveY + separationY;
-        const finalDist = Math.sqrt(finalMoveX * finalMoveX + finalMoveY * finalMoveY);
-        
-        if (finalDist > this.speed) {
-            finalMoveX = (finalMoveX / finalDist) * this.speed;
-            finalMoveY = (finalMoveY / finalDist) * this.speed;
-        }
 
-        // Pályán belül maradás
+        // Soft edge steering (intent), not hard position kill
         const canvasWidth = window.innerWidth;
         const canvasHeight = window.innerHeight;
         const margin = 50;
-        if (this.owner.x + finalMoveX < margin || this.owner.x + finalMoveX > canvasWidth - margin) finalMoveX = 0;
-        if (this.owner.y + finalMoveY < margin || this.owner.y + finalMoveY > canvasHeight - margin) finalMoveY = 0;
+        if (this.owner.x < margin) finalMoveX += this.speed;
+        else if (this.owner.x > canvasWidth - margin) finalMoveX -= this.speed;
+        if (this.owner.y < margin) finalMoveY += this.speed;
+        else if (this.owner.y > canvasHeight - margin) finalMoveY -= this.speed;
 
-        this.owner.x += finalMoveX;
-        this.owner.y += finalMoveY;
+        const finalDist = Math.sqrt(finalMoveX * finalMoveX + finalMoveY * finalMoveY);
+        if (finalDist > 0.001) {
+            this.owner.setMoveIntent(finalMoveX / finalDist, finalMoveY / finalDist);
+        } else {
+            this.owner.setMoveIntent(0, 0);
+        }
 
-        // Tüzelés: Hőkövető lövedék (Csak 1000 egységen belül)
+        this.owner.setLookTarget(player.x, player.y);
+
+        // Homing / pre-homing rocket (within 1000 range)
         if (distToPlayer < 1000 && currentTime - this.lastShotTime > this.fireRate) {
             const angle = Math.atan2(dy, dx);
             const rand = Math.random();
@@ -133,7 +140,6 @@ export class SkyPulseAI {
             };
 
             if (rand < 0.33) {
-                // Balra lő
                 const ux = dx / distToPlayer;
                 const uy = dy / distToPlayer;
                 const perpX = uy;
@@ -144,7 +150,6 @@ export class SkyPulseAI {
                     y: player.y + perpY * 600
                 };
             } else if (rand < 0.66) {
-                // Jobbra lő
                 const ux = dx / distToPlayer;
                 const uy = dy / distToPlayer;
                 const perpX = -uy;
@@ -155,13 +160,21 @@ export class SkyPulseAI {
                     y: player.y + perpY * 600
                 };
             }
-            // else: Immediate homing (default setup)
 
             spawnBullet(bulletProps);
             this.lastShotTime = currentTime;
-            // Randomize next shot
             this.fireRate = this.baseFireRate * (0.75 + Math.random() * 0.5);
         }
     }
-}
 
+    applyBoundsAfterPhysics() {
+        const b = this._pendingBounds;
+        if (!b || !b.canvasWidth || !b.canvasHeight) return;
+        const margin = 50;
+        const o = this.owner;
+        if (o.x < margin) { o.x = margin; if (o.vx < 0) o.vx = 0; }
+        else if (o.x > b.canvasWidth - margin) { o.x = b.canvasWidth - margin; if (o.vx > 0) o.vx = 0; }
+        if (o.y < margin) { o.y = margin; if (o.vy < 0) o.vy = 0; }
+        else if (o.y > b.canvasHeight - margin) { o.y = b.canvasHeight - margin; if (o.vy > 0) o.vy = 0; }
+    }
+}
