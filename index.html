@@ -446,6 +446,17 @@
         const runCollectionFrame = async () => {
             if (!gameInstance) return;
 
+            if (gameInstance.collectNeuralRollouts && !gameInstance.bot.ready) {
+                if (gameInstance.bot.loadError) {
+                    console.error('Neural rollout collection stopped because the model could not load.', gameInstance.bot.loadError);
+                    gameInstance.cleanup();
+                    gameInstance = null;
+                    return;
+                }
+                animationFrameId = requestAnimationFrame(runCollectionFrame);
+                return;
+            }
+
             for (let step = 0; step < simulationStepsPerFrame && !gameInstance.gameOver; step++) {
                 gameInstance.update(16);
             }

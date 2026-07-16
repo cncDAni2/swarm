@@ -23,6 +23,7 @@ export class NeuralPlayerBot {
         this.stochastic = stochastic;
         this.model = null;
         this.lastPolicyDecision = null;
+        this.reportedInvalidOutput = false;
         this.loadError = null;
         this.ready = false;
         this.loadModel();
@@ -52,13 +53,16 @@ export class NeuralPlayerBot {
 
     chooseAction(logits, offset, size) {
         const values = logits.slice(offset, offset + size);
+        if (values.length !== size || values.some(value => !Number.isFinite(value))) return null;
         const maximum = Math.max(...values);
         const weights = values.map(value => Math.exp(value - maximum));
         const total = weights.reduce((sum, value) => sum + value, 0);
+        if (!Number.isFinite(total) || total <= 0) return null;
         const probabilities = weights.map(value => value / total);
         const index = this.stochastic
             ? this.sampleAction(probabilities)
             : probabilities.indexOf(Math.max(...probabilities));
+        if (!Number.isInteger(index) || index < 0 || index >= size) return null;
         return { index, logProbability: Math.log(Math.max(probabilities[index], 1e-8)) };
     }
 
@@ -74,19 +78,28 @@ export class NeuralPlayerBot {
             const movement = this.chooseAction(output, 0, 9);
             const aim = this.chooseAction(output, 9, 16);
             const fire = this.chooseAction(output, 25, 2);
+            if (!movement || !aim || !fire) {
+                this.lastPolicyDecision = null;
+                if (!this.reportedInvalidOutput) {
+                    console.error('Neural player model produced an invalid action output; waiting for a valid model update.');
+                    this.reportedInvalidOutput = true;
+                }
+                return emptyControls(player);
+            }
             const movementIndex = movement.index;
             const aimIndex = aim.index;
             const fireIndex = fire.index;
             const [ax, ay] = MOVEMENT_DIRECTIONS[movementIndex];
             const aimAngle = aimIndex / 16 * Math.PI * 2;
             const aimDistance = Math.hypot(this.game.canvas.width, this.game.canvas.height);
+            const value = output.length > 27 && Number.isFinite(output[27]) ? output[27] : 0;
 
             this.lastPolicyDecision = {
                 observation: Array.from(observation),
                 action: { movement: movementIndex, aimDirection: aimIndex, fire: fireIndex === 1 },
                 policy: {
                     logProbability: movement.logProbability + aim.logProbability + fire.logProbability,
-                    value: output.length > 27 ? output[27] : 0
+                    value
                 }
             };
 

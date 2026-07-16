@@ -71,7 +71,7 @@
         {
           "class_name": "Dense",
           "config": {
-            "units": 27,
+            "units": 28,
             "activation": "linear",
             "use_bias": true,
             "kernel_initializer": {
@@ -141,14 +141,14 @@
           "name": "dense_Dense3/kernel",
           "shape": [
             128,
-            27
+            28
           ],
           "dtype": "float32"
         },
         {
           "name": "dense_Dense3/bias",
           "shape": [
-            27
+            28
           ],
           "dtype": "float32"
         }

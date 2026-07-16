@@ -62,8 +62,12 @@ async function loadRollouts(directory) {
     }
     const files = (await fs.readdir(directory)).filter(file => file.endsWith('.jsonl'));
     const transitions = [];
+    const validFiles = [];
+    const skippedFiles = [];
     for (const file of files) {
         const content = await fs.readFile(path.join(directory, file), 'utf8');
+        const fileTransitions = [];
+        let valid = true;
         for (const line of content.split('\n')) {
             if (!line) continue;
             const transition = JSON.parse(line);
@@ -72,13 +76,23 @@ async function loadRollouts(directory) {
                 !Number.isFinite(transition.policy?.logProbability) ||
                 !Number.isFinite(transition.policy?.value)
             ) {
-                throw new Error(`${file} is not a valid neural rollout`);
+                valid = false;
+                break;
             }
-            transitions.push(transition);
+            fileTransitions.push(transition);
+        }
+        if (valid) {
+            transitions.push(...fileTransitions);
+            validFiles.push(file);
+        } else {
+            skippedFiles.push(file);
         }
     }
     if (transitions.length === 0) throw new Error(`No neural rollout transitions found in ${directory}`);
-    return { files: files.length, transitions };
+    if (skippedFiles.length > 0) {
+        console.warn(`Skipped ${skippedFiles.length} non-PPO rollout files created before the policy model was ready.`);
+    }
+    return { files: validFiles, transitions };
 }
 
 function discountedAdvantages(transitions, gamma) {
@@ -105,7 +119,17 @@ function createPpoModel(tf) {
 }
 
 async function loadPolicy(tf, modelDirectory) {
-    const previous = await tf.loadLayersModel(`file://${path.join(modelDirectory, 'model.json')}`);
+    const modelJson = JSON.parse(await fs.readFile(path.join(modelDirectory, 'model.json'), 'utf8'));
+    const manifest = modelJson.weightsManifest?.[0];
+    if (!modelJson.modelTopology || !manifest?.weights || !manifest?.paths?.[0]) {
+        throw new Error(`Invalid model artifacts in ${modelDirectory}`);
+    }
+    const weightData = await fs.readFile(path.join(modelDirectory, manifest.paths[0]));
+    const previous = await tf.loadLayersModel(tf.io.fromMemory({
+        modelTopology: modelJson.modelTopology,
+        weightSpecs: manifest.weights,
+        weightData: weightData.buffer.slice(weightData.byteOffset, weightData.byteOffset + weightData.byteLength)
+    }));
     if (previous.outputs[0].shape[1] === PPO_OUTPUT_SIZE) return previous;
     if (previous.outputs[0].shape[1] !== ACTOR_OUTPUT_SIZE) throw new Error('Model must have 27 actor logits or 28 PPO outputs');
 
@@ -116,8 +140,6 @@ async function loadPolicy(tf, modelDirectory) {
     const kernel = tf.concat([actorKernel, tf.zeros([actorKernel.shape[0], 1])], 1);
     const bias = tf.concat([actorBias, tf.zeros([1])], 0);
     model.layers[2].setWeights([kernel, bias]);
-    actorKernel.dispose();
-    actorBias.dispose();
     kernel.dispose();
     bias.dispose();
     previous.dispose();
@@ -193,7 +215,7 @@ async function main() {
     const rollout = await loadRollouts(options.rolloutDirectory);
     const { returns, advantages } = discountedAdvantages(rollout.transitions, options.gamma);
     const count = rollout.transitions.length;
-    console.log(`Loaded ${count} on-policy transitions from ${rollout.files} rollout files.`);
+    console.log(`Loaded ${count} on-policy transitions from ${rollout.files.length} rollout files.`);
 
     const states = tf.tensor2d(rollout.transitions.flatMap(transition => transition.state), [count, OBSERVATION_SIZE]);
     const targets = tf.tensor2d(rollout.transitions.flatMap((transition, index) => [
@@ -212,7 +234,8 @@ async function main() {
         let lossTotal = 0;
         let batches = 0;
         for (let start = 0; start < count; start += options.batchSize) {
-            const indices = tf.tensor1d(order.slice(start, start + options.batchSize), 'int32');
+            const batchIndices = Int32Array.from(order.slice(start, start + options.batchSize));
+            const indices = tf.tensor1d(batchIndices, 'int32');
             const batchStates = tf.gather(states, indices);
             const batchTargets = tf.gather(targets, indices);
             const result = tf.variableGrads(() => ppoLoss(tf, model, batchStates, batchTargets, options.clipRange));
