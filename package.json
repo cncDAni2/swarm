@@ -7,6 +7,8 @@
     "start": "python -m http.server 4200",
     "start-exe": "electron .",
     "build": "electron-builder",
+      "create-initial-model": "node training/createInitialModel.cjs",
+      "check-training-data": "node training/checkTrainingData.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {
@@ -27,5 +29,8 @@
   "devDependencies": {
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0"
   }
 }

@@ -46,7 +46,7 @@ export class Boss {
         this.electricBeamImmune = false;
     }
 
-    update(player, enemies, bullets, currentTime, deltaTime, audio, spawnBullet, onBossDeath) {
+    update(player, enemies, bullets, currentTime, deltaTime, audio, spawnBullet, onBossDeath, damagePlayer) {
         // Handle Invulnerability
         if (this.isInvulnerable) {
             this.invulnerableTimer -= deltaTime;
@@ -114,7 +114,8 @@ export class Boss {
                 if (!this.beamHasDealtDamage) {
                     // Check collision with player
                     if (this.checkBeamCollision(player)) {
-                        player.health -= 30;
+                        if (damagePlayer) damagePlayer(30);
+                        else player.health -= 30;
                         this.beamHasDealtDamage = true;
                     }
                 }

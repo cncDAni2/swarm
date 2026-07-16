@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "observationSize": 265,
+  "outputSize": 27,
+  "actionHeads": {
+    "movement": {
+      "offset": 0,
+      "size": 9
+    },
+    "aimDirection": {
+      "offset": 9,
+      "size": 16
+    },
+    "fire": {
+      "offset": 25,
+      "size": 2
+    }
+  },
+  "decisionIntervalMs": 250,
+  "algorithm": "untrained-actor",
+  "createdAt": "2026-07-16T21:48:45.786Z"
+}

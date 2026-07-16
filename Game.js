@@ -5,6 +5,9 @@ import { Boss } from './ai/Boss.js';
 import { createPlayerShotLane } from './ai/playerShotEvasion.js';
 import { applyTankPhysics } from './tankPhysics.js';
 import { PlayerBot } from './ai/PlayerBot.js';
+import { BotObservationEncoder } from './ai/BotObservationEncoder.js';
+import { BOT_DECISION_INTERVAL_MS } from './ai/BotModelSchema.js';
+import { encodeTeacherAction, EpisodeRecorder, RewardTracker } from './ai/BotTraining.js';
 
 export class Game {
     constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null, botMode = false) {
@@ -17,6 +20,11 @@ export class Game {
         this.onMainMenu = onMainMenu;
         this.botMode = botMode;
         this.bot = botMode ? new PlayerBot(this) : null;
+        this.botInput = null;
+        this.lastBotDecisionTime = -Infinity;
+        this.observationEncoder = botMode ? new BotObservationEncoder() : null;
+        this.rewardTracker = botMode ? new RewardTracker() : null;
+        this.episodeRecorder = botMode ? new EpisodeRecorder() : null;
         
         // Difficulty settings
         let maxHP = 100;
@@ -256,6 +264,10 @@ export class Game {
         this.floatingTexts = [];
         this.electricBeam.isCharging = false;
         this.electricBeam.effect = null;
+        this.botInput = null;
+        this.lastBotDecisionTime = -Infinity;
+        if (this.rewardTracker) this.rewardTracker.reset();
+        if (this.botMode) this.episodeRecorder = new EpisodeRecorder();
         
         if (fromStart) {
             this.round = 0;
@@ -301,6 +313,34 @@ export class Game {
         window.addEventListener('contextmenu', this._boundContextMenu);
         window.addEventListener('blur', this._boundBlur);
         window.addEventListener('focus', this._boundFocus);
+    }
+
+    getBotInput(currentTime) {
+        if (!this.bot) return null;
+        if (!this.botInput || currentTime - this.lastBotDecisionTime >= BOT_DECISION_INTERVAL_MS) {
+            const controls = this.bot.update(this.player, this.enemies, this.bullets, currentTime);
+            this.botInput = controls;
+            this.lastBotDecisionTime = currentTime;
+
+            if (this.episodeRecorder && this.episodeRecorder.enabled) {
+                const observation = this.observationEncoder.encode(this);
+                this.episodeRecorder.recordDecision(
+                    observation,
+                    encodeTeacherAction(controls, this.player),
+                    this.rewardTracker.consume()
+                );
+            }
+        }
+        return this.botInput;
+    }
+
+    recordPlayerDamageDealt(amount) {
+        if (this.rewardTracker) this.rewardTracker.recordDamageDealt(amount);
+    }
+
+    applyPlayerDamage(amount) {
+        this.player.health -= amount;
+        if (this.rewardTracker) this.rewardTracker.recordDamageTaken(amount);
     }
 
     tryStartElectricBeam() {
@@ -420,7 +460,9 @@ export class Game {
         // Entity may already be removed if a prior hit killed it this frame
         if (!this.enemies.includes(e)) return;
         const j = this.enemies.indexOf(e);
+        const actualDamage = Math.min(damage, Math.max(0, e.health));
         e.health -= damage;
+        this.recordPlayerDamageDealt(actualDamage);
         e.lastTimeHitByPlayer = this.gameTime;
         this.damageSplashes.push({
             x: e.x,
@@ -443,7 +485,9 @@ export class Game {
         const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
         if (isBossInitialImmune || this.boss.isInvulnerable) return false;
 
+        const actualDamage = Math.min(damage, Math.max(0, this.boss.health));
         this.boss.health -= damage;
+        this.recordPlayerDamageDealt(actualDamage);
         this.explosions.push({ x: hitX, y: hitY, life: 0.5, decay: 0.1, maxRadius: 20 });
         this.damageSplashes.push({
             x: hitX,
@@ -590,6 +634,7 @@ export class Game {
         this.deltaTime = deltaTime;
         this.gameTime += deltaTime;
         const currentTime = this.gameTime;
+        if (this.rewardTracker) this.rewardTracker.tick(deltaTime);
         
         if (this.damageFlash > 0) {
             this.damageFlash -= deltaTime;
@@ -624,7 +669,7 @@ export class Game {
             
             // If bot is playing, it should keep aiming at its target during charge
             if (this.botMode) {
-                const botInput = this.bot.update(this.player, this.enemies, this.bullets, currentTime);
+                const botInput = this.getBotInput(currentTime);
                 this.mousePos.x = botInput.mouseX;
                 this.mousePos.y = botInput.mouseY;
             }
@@ -642,7 +687,7 @@ export class Game {
             let ay = 0;
 
             if (this.botMode) {
-                const botInput = this.bot.update(this.player, this.enemies, this.bullets, currentTime);
+                const botInput = this.getBotInput(currentTime);
                 ax = (botInput.ax || 0) * this.player.accel;
                 ay = (botInput.ay || 0) * this.player.accel;
                 this.mousePos.x = botInput.mouseX || this.player.x;
@@ -654,7 +699,7 @@ export class Game {
                 if (isNaN(this.mousePos.y)) this.mousePos.y = this.player.y;
 
                 this.isMouseDown = botInput.isMouseDown;
-                if (botInput.tryElectricBeam) {
+                if (botInput.tryElectricBeam && !(this.episodeRecorder && this.episodeRecorder.enabled)) {
                     this.tryStartElectricBeam();
                 }
             } else {
@@ -731,6 +776,12 @@ export class Game {
         if (this.player.health <= 0) {
             this.player.health = 0;
             if (!this.gameOver) {
+                if (this.episodeRecorder && this.episodeRecorder.enabled) {
+                    this.episodeRecorder.finish(
+                        this.observationEncoder.encode(this),
+                        this.rewardTracker.consume()
+                    );
+                }
                 this.audio.playGameOver();
                 this.restartBtn.style.display = 'block';
                 this.restartRoundBtn.style.display = 'block';
@@ -802,6 +853,7 @@ export class Game {
         const canStartNextRound = !this.boss && (currentTime - this.lastWormholeSpawn >= this.wormholeInterval);
         
         if (canStartNextRound) {
+            if (this.rewardTracker && this.round > 0) this.rewardTracker.recordRoundCompleted();
             this.round++;
             this.roundDisplayTimer = currentTime;
             this.lastWormholeSpawn = currentTime;
@@ -957,6 +1009,7 @@ export class Game {
                 }
                 
                 // Trigger next round IMMEDIATELY
+                if (this.rewardTracker) this.rewardTracker.recordRoundCompleted();
                 this.round++;
                 this.roundDisplayTimer = currentTime;
                 this.lastWormholeSpawn = currentTime; // Reset interval timer to now
@@ -979,7 +1032,7 @@ export class Game {
                     'flanker',
                     this.round
                 ));
-            });
+            }, damage => this.applyPlayerDamage(damage));
         }
 
         this.enemies.forEach(enemy => {
@@ -1032,7 +1085,7 @@ export class Game {
                             } else {
                                 this.damageResistTimer = 200;
                             }
-                            this.player.health -= dmg;
+                            this.applyPlayerDamage(dmg);
                             this.damageFlash = 200;
                         }
                         
@@ -1052,7 +1105,7 @@ export class Game {
                 } else {
                     this.damageResistTimer = 200;
                 }
-                this.player.health -= dmg;
+                this.applyPlayerDamage(dmg);
                 this.damageFlash = 200;
                 enemy.stunRemaining = 1000;
                 this.explosions.push({x: (this.player.x + enemy.x)/2, y: (this.player.y + enemy.y)/2, life: 1, decay: 0.05, maxRadius: 40});
@@ -1103,7 +1156,7 @@ export class Game {
                             } else {
                                 this.damageResistTimer = 200;
                             }
-                            this.player.health -= dmg; // Heavy damage
+                            this.applyPlayerDamage(dmg); // Heavy damage
                             this.damageFlash = 300;
                         }
                         this.bullets.splice(i, 1);
@@ -1192,14 +1245,14 @@ export class Game {
                             } else {
                                 this.damageResistTimer = 200;
                             }
-                            this.player.health -= dmg; // Impact damage
+                            this.applyPlayerDamage(dmg); // Impact damage
                             this.damageFlash = 200;
                         }
                     } else if (b.ownerType === 'boss-spiral') {
                         let dmg = 15;
                         if (this.damageResistTimer > 0) dmg *= 0.2;
                         else this.damageResistTimer = 200;
-                        this.player.health -= dmg;
+                        this.applyPlayerDamage(dmg);
                         this.damageFlash = 200;
                         hit = true;
                     } else {
@@ -1209,7 +1262,7 @@ export class Game {
                         } else {
                             this.damageResistTimer = 200;
                         }
-                        this.player.health -= dmg; 
+                        this.applyPlayerDamage(dmg);
                         this.damageFlash = 150;
                         hit = true; 
                     }
@@ -1223,7 +1276,10 @@ export class Game {
                     const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
                     
                     if (!isBossInitialImmune && !this.boss.isInvulnerable) {
-                        this.boss.health -= (b.damage || 1);
+                        const damage = b.damage || 1;
+                        const actualDamage = Math.min(damage, Math.max(0, this.boss.health));
+                        this.boss.health -= damage;
+                        this.recordPlayerDamageDealt(actualDamage);
                         this.explosions.push({x: b.x, y: b.y, life: 0.5, decay: 0.1, maxRadius: 20});
                         this.damageSplashes.push({ 
                             x: b.x, 
@@ -1251,8 +1307,11 @@ export class Game {
 
                     const d = Math.sqrt((b.x-e.x)**2 + (b.y-e.y)**2);
                     if (d < e.size/2 + 5) {
-                        e.health -= (b.damage || 1);
+                        const damage = b.damage || 1;
+                        const actualDamage = Math.min(damage, Math.max(0, e.health));
+                        e.health -= damage;
                         if (b.ownerType === 'player') {
+                            this.recordPlayerDamageDealt(actualDamage);
                             e.lastTimeHitByPlayer = this.gameTime;
                             this.damageSplashes.push({ 
                                 x: b.x, 
