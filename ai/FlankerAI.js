@@ -1,3 +1,11 @@
+import {
+    applyPlayerShotLaneEvasion,
+    tickDodge,
+    DODGE_COOLDOWN_MS,
+    DODGE_DURATION_MS,
+    DODGE_SPEED_MUL
+} from './playerShotEvasion.js';
+
 // Alternates orbit direction between spawns so waves contain both variants:
 //  - clockwise  = "right" flanker  (orbitDir +1)
 //  - counter-cw = "left"  flanker  (orbitDir -1)
@@ -22,10 +30,15 @@ export class FlankerAI {
         // 'approaching' -> curve in from the side, 'orbiting' -> circle the player.
         this.state = 'approaching';
 
-        // Evasion snapshots.
-        this.lastEvadeUpdateTime = 0;
-        this.playerBulletWalls = [];
+        // Evasion (player fire-lines + urgent enemy projectiles).
         this.evadeWalls = [];
+
+        // Fast sideways dodge (2× maxSpeed dash) when a player fire-line threatens us
+        this.lastDodgeTime = -Infinity;
+        this.dodgeCooldown = DODGE_COOLDOWN_MS;
+        this.dodgeDuration = DODGE_DURATION_MS;
+        this.dodgeSpeedMul = DODGE_SPEED_MUL;
+        this.dodgeUntil = 0;
     }
 
     update(player, enemies, bullets, currentTime, spawnBullet, canvasWidth, canvasHeight) {
@@ -80,11 +93,19 @@ export class FlankerAI {
         }
 
         // 4. Projectile evasion.
-        if (currentTime - this.lastEvadeUpdateTime > 200) {
-            this.playerBulletWalls = bullets ? bullets.filter(b => b.ownerType === 'player').map(b => ({ type: 'player-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy })) : [];
-            this.lastEvadeUpdateTime = currentTime;
-        }
+        // Player: full fire-line from player → map edge for 400ms (live, no poll nerf) + dodge.
+        const laneResult = applyPlayerShotLaneEvasion(
+            this,
+            this.owner,
+            player.shotLanes,
+            currentTime,
+            moveX,
+            moveY
+        );
+        moveX = laneResult.moveX;
+        moveY = laneResult.moveY;
 
+        // Boss & SkyPulse shells: still tracked live every frame.
         const urgentWalls = [];
         if (bullets) {
             bullets.forEach(b => {
@@ -92,9 +113,9 @@ export class FlankerAI {
                 else if (b.ownerType === 'sky-pulse') urgentWalls.push({ type: 'plasma-bullet', x: b.x, y: b.y, vx: b.vx, vy: b.vy });
             });
         }
-        this.evadeWalls = [...this.playerBulletWalls, ...urgentWalls];
+        this.evadeWalls = [...laneResult.walls, ...urgentWalls];
 
-        this.evadeWalls.forEach(w => {
+        urgentWalls.forEach(w => {
             const vbx = this.owner.x - w.x;
             const vby = this.owner.y - w.y;
             const vlen = Math.sqrt((w.vx || 0) ** 2 + (w.vy || 0) ** 2);
@@ -106,10 +127,7 @@ export class FlankerAI {
             let range = 200;
             let width = 25;
 
-            if (w.type === 'player-bullet') {
-                range = 2000;
-                width = 25;
-            } else if (w.type === 'boss-bullet' || w.type === 'plasma-bullet') {
+            if (w.type === 'boss-bullet' || w.type === 'plasma-bullet') {
                 range = w.type === 'boss-bullet' ? 90 : 100;
                 width = w.type === 'boss-bullet' ? 34 : 38;
             }
@@ -123,7 +141,7 @@ export class FlankerAI {
                     const perpy = bux;
                     const side = (this.owner.x - w.x) * perpx + (this.owner.y - w.y) * perpy;
                     const steerDir = side >= 0 ? 1 : -1;
-                    const force = w.type === 'boss-bullet' || w.type === 'plasma-bullet' ? 5.0 : 2.0;
+                    const force = 5.0;
                     moveX += perpx * steerDir * force;
                     moveY += perpy * steerDir * force;
                 }
@@ -169,11 +187,17 @@ export class FlankerAI {
         }
 
         // 7. Desired direction (physics on Enemy integrates accel/friction/turn)
-        const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
-        if (finalMoveDist > 0.001) {
-            this.owner.setMoveIntent(moveX / finalMoveDist, moveY / finalMoveDist);
+        // Active dodge dash overrides normal steering (faces dodge dir @ 2× maxSpeed)
+        const dodge = tickDodge(this, this.owner, currentTime);
+        if (dodge.active) {
+            this.owner.setMoveIntent(dodge.x, dodge.y);
         } else {
-            this.owner.setMoveIntent(0, 0);
+            const finalMoveDist = Math.sqrt(moveX * moveX + moveY * moveY);
+            if (finalMoveDist > 0.001) {
+                this.owner.setMoveIntent(moveX / finalMoveDist, moveY / finalMoveDist);
+            } else {
+                this.owner.setMoveIntent(0, 0);
+            }
         }
 
         // Face along orbit / approach heading (velocity will refine facing over time)

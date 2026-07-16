@@ -5,8 +5,8 @@ export class Boss {
         this.x = canvasWidth / 2;
         this.y = canvasHeight / 2;
         this.size = 270;
-        this.health = 100;
-        this.maxHealth = 100;
+        this.health = 125;
+        this.maxHealth = 125;
         
         // Spawning logic (internal tiny enemies)
         this.lastSpawnTime = currentTime;
@@ -41,6 +41,9 @@ export class Boss {
         this.invulnerableTimer = 0;
         this.phase2Triggered = false;
         this.rapidSpawnTimer = 0;
+
+        // Electric beam can only damage this boss once
+        this.electricBeamImmune = false;
     }
 
     update(player, enemies, bullets, currentTime, deltaTime, audio, spawnBullet, onBossDeath) {
@@ -235,6 +238,29 @@ export class Boss {
 
         if (sprite && sprite.complete) {
             ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+        }
+
+        // Blue marker: immune to player electric beam
+        if (this.electricBeamImmune) {
+            const markerR = 14;
+            const markerX = drawSize * 0.28;
+            const markerY = -drawSize * 0.32;
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, markerR, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(40, 140, 255, 0.95)';
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#4da6ff';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(200, 230, 255, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // Small inner ring to read as a status badge
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, markerR * 0.45, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
         }
         
         ctx.restore();

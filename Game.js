@@ -2,6 +2,7 @@ import { Enemy } from './Enemy.js';
 import { Wormhole } from './Wormhole.js';
 import { AudioService } from './AudioService.js';
 import { Boss } from './ai/Boss.js';
+import { createPlayerShotLane } from './ai/playerShotEvasion.js';
 
 export class Game {
     constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null) {
@@ -57,16 +58,21 @@ export class Game {
         this.kills = 0;
         this.boss = null;
 
+        // Full-map virtual fire-lines published on each player shot (400ms).
+        // Agile AIs (Flanker, SkyPulse) read these via player.shotLanes.
+        this.playerShotLanes = [];
+        this.player.shotLanes = this.playerShotLanes;
+
         // Right-click electric beam weapon
         this.electricBeam = {
             isCharging: false,
             chargeStartTime: 0,
-            chargeDuration: 500,
-            energyCost: 25,
-            aoeRadius: 250,
-            aoeDamage: 25,
-            beamWidth: 50,
-            beamDamage: 15,
+            chargeDuration: 600,
+            energyCost: 33,
+            aoeRadius: 300,
+            aoeDamage: 5,
+            beamWidth: 75,
+            beamDamage: 18,
             angle: 0,
             // Post-fire visuals (null when inactive)
             effect: null // { startTime, duration, angle, lightningTargets: [{x,y}] }
@@ -116,7 +122,7 @@ export class Game {
         this.wormholeInterval = 40000;
         this.wormholePatternCounter = 0;
         
-        this.round = 0;
+        this.round = 2;
         this.roundDisplayTimer = -5000;
         this.roundDisplayDuration = 3000;
         this.roundTextAlpha = 0;
@@ -124,6 +130,7 @@ export class Game {
         this.damageFlash = 0;
         this.damageResistTimer = 0;
         this.damageSplashes = [];
+        this.floatingTexts = []; // { x, y, text, createdAt, duration, color }
         this.playedDamageLow = false;
         this.playedDamageHeavy = false;
         
@@ -234,6 +241,7 @@ export class Game {
         this.explosions = [];
         this.wormholes = [];
         this.boss = null;
+        this.floatingTexts = [];
         this.electricBeam.isCharging = false;
         this.electricBeam.effect = null;
         
@@ -327,12 +335,43 @@ export class Game {
             }
         }
 
-        // Boss AoE
+        // Boss: electric beam damages only once per boss lifetime
         if (this.boss) {
             const distBoss = Math.hypot(this.boss.x - px, this.boss.y - py);
-            if (distBoss <= eb.aoeRadius + this.boss.size / 2) {
+            const bossInAoe = distBoss <= eb.aoeRadius + this.boss.size / 2;
+            const bossInBeam = this.isInElectricBeam(
+                this.boss.x, this.boss.y, this.boss.size / 2, px, py, ux, uy, halfWidth, beamRange
+            );
+
+            if (bossInAoe) {
                 lightningTargets.push({ x: this.boss.x, y: this.boss.y });
-                this.damageBossEntity(eb.aoeDamage, currentTime, px, py);
+            }
+
+            if (bossInAoe || bossInBeam) {
+                if (this.boss.electricBeamImmune) {
+                    this.spawnFloatingText(
+                        this.boss.x,
+                        this.boss.y - this.boss.size / 2 - 48,
+                        'IMMUNE TO ELECTRIC',
+                        currentTime,
+                        '#7ecbff'
+                    );
+                } else {
+                    // One hit only: prefer beam damage when in the ray, else AoE
+                    let bossDmg = 0;
+                    let hitX = px;
+                    let hitY = py;
+                    if (bossInBeam) {
+                        bossDmg = eb.beamDamage;
+                        hitX = px + ux * 40;
+                        hitY = py + uy * 40;
+                    } else if (bossInAoe) {
+                        bossDmg = eb.aoeDamage;
+                    }
+                    if (bossDmg > 0 && this.damageBossEntity(bossDmg, currentTime, hitX, hitY)) {
+                        this.boss.electricBeamImmune = true;
+                    }
+                }
             }
         }
 
@@ -343,12 +382,6 @@ export class Game {
             if (this.isInElectricBeam(e.x, e.y, e.size / 2, px, py, ux, uy, halfWidth, beamRange)) {
                 this.damageEnemyEntity(e, eb.beamDamage, currentTime);
             }
-        }
-
-        if (this.boss && this.isInElectricBeam(
-            this.boss.x, this.boss.y, this.boss.size / 2, px, py, ux, uy, halfWidth, beamRange
-        )) {
-            this.damageBossEntity(eb.beamDamage, currentTime, px + ux * 40, py + uy * 40);
         }
 
         eb.effect = {
@@ -394,9 +427,9 @@ export class Game {
     }
 
     damageBossEntity(damage, currentTime, hitX, hitY) {
-        if (!this.boss) return;
+        if (!this.boss) return false;
         const isBossInitialImmune = this.wormholes.some(wh => (currentTime - wh.startTime < 5000));
-        if (isBossInitialImmune || this.boss.isInvulnerable) return;
+        if (isBossInitialImmune || this.boss.isInvulnerable) return false;
 
         this.boss.health -= damage;
         this.explosions.push({ x: hitX, y: hitY, life: 0.5, decay: 0.1, maxRadius: 20 });
@@ -407,6 +440,19 @@ export class Game {
             offsetX: hitX - this.boss.x,
             offsetY: hitY - this.boss.y,
             createdAt: currentTime
+        });
+        return true;
+    }
+
+    spawnFloatingText(x, y, text, currentTime, color = '#ffffff') {
+        this.floatingTexts.push({
+            x,
+            y,
+            text,
+            createdAt: currentTime,
+            duration: 800, // under 1s
+            rise: 55,
+            color
         });
     }
 
@@ -538,6 +584,12 @@ export class Game {
 
         if (this.player.shootVisualTimer > 0) {
             this.player.shootVisualTimer -= deltaTime;
+        }
+
+        // Prune expired player shot lanes; keep player.shotLanes in sync for AI
+        if (this.playerShotLanes.length > 0) {
+            this.playerShotLanes = this.playerShotLanes.filter(l => currentTime < l.expiresAt);
+            this.player.shotLanes = this.playerShotLanes;
         }
 
         // Expire electric beam fire visuals in update (keep draw pure-render)
@@ -675,6 +727,17 @@ export class Game {
                 ownerType: 'player',
                 source: this.player
             });
+
+            // Full fire-line from player to map edge for agile enemy evasion (400ms)
+            this.playerShotLanes.push(createPlayerShotLane(
+                this.player.x,
+                this.player.y,
+                angle,
+                this.canvas.width,
+                this.canvas.height,
+                currentTime
+            ));
+            this.player.shotLanes = this.playerShotLanes;
 
             // Consume energy
             this.player.energy = Math.max(0, this.player.energy - 1);
@@ -1160,6 +1223,13 @@ export class Game {
             }
         }
 
+        // Floating combat text cleanup
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+            if (currentTime - this.floatingTexts[i].createdAt > this.floatingTexts[i].duration) {
+                this.floatingTexts.splice(i, 1);
+            }
+        }
+
         // Re-evaluate pairings if ground unit counts changed
         const currentRiflemen = this.enemies.filter(e => e.type === 'rifleman');
         const currentMelee = this.enemies.filter(e => e.type === 'melee');
@@ -1307,6 +1377,7 @@ export class Game {
                 let range = 200;
                 let width = 50;
                 if (w.type === 'player-bullet') { range = 2000; width = 25; }
+                if (w.type === 'player-shot-line') { range = w.range ?? 2000; width = w.width ?? 40; }
                 if (w.type === 'boss-bullet') { range = 90; width = 34; }
                 if (w.type === 'plasma-bullet') { range = 100; width = 38; }
 
@@ -1559,6 +1630,28 @@ export class Game {
                 size,
                 size
             );
+        });
+        this.ctx.restore();
+
+        // Floating combat text (e.g. boss electric immunity)
+        this.ctx.save();
+        this.floatingTexts.forEach(ft => {
+            const t = Math.min(1, (this.gameTime - ft.createdAt) / ft.duration);
+            const alpha = 1 - t;
+            const drawY = ft.y - ft.rise * t;
+            this.ctx.globalAlpha = alpha;
+            this.ctx.font = 'bold 16px Courier New';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.lineJoin = 'round';
+            this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeText(ft.text, ft.x, drawY);
+            this.ctx.shadowBlur = 8;
+            this.ctx.shadowColor = ft.color;
+            this.ctx.fillStyle = ft.color;
+            this.ctx.fillText(ft.text, ft.x, drawY);
+            this.ctx.shadowBlur = 0;
         });
         this.ctx.restore();
 

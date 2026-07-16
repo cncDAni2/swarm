@@ -219,8 +219,10 @@ export class Enemy {
             this.forwardSpeed *= Math.max(0, frictionFactor);
         }
 
-        if (this.forwardSpeed > this.maxSpeed) {
-            this.forwardSpeed = this.maxSpeed;
+        // dodgeSpeedMul (e.g. 2 during Flanker/SkyPulse dodge dash) raises the cap temporarily
+        const speedCap = this.maxSpeed * (this.dodgeSpeedMul > 1 ? this.dodgeSpeedMul : 1);
+        if (this.forwardSpeed > speedCap) {
+            this.forwardSpeed = speedCap;
         }
         if (this.forwardSpeed < 0) this.forwardSpeed = 0;
 
