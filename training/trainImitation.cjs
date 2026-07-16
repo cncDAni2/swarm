@@ -90,33 +90,45 @@ function createPolicy(tf) {
 
 function imitationLoss(tf) {
     return (labels, logits) => tf.tidy(() => {
-        const movementLabels = labels.slice([0, 0], [-1, 1]).asType('int32').squeeze([1]);
-        const aimLabels = labels.slice([0, 1], [-1, 1]).asType('int32').squeeze([1]);
-        const fireLabels = labels.slice([0, 2], [-1, 1]).asType('int32').squeeze([1]);
+        const movementLabels = labels.slice([0, ACTION_HEADS.movement.offset], [-1, ACTION_HEADS.movement.size]);
+        const aimLabels = labels.slice([0, ACTION_HEADS.aimDirection.offset], [-1, ACTION_HEADS.aimDirection.size]);
+        const fireLabels = labels.slice([0, ACTION_HEADS.fire.offset], [-1, ACTION_HEADS.fire.size]);
         const movementLogits = logits.slice([0, ACTION_HEADS.movement.offset], [-1, ACTION_HEADS.movement.size]);
         const aimLogits = logits.slice([0, ACTION_HEADS.aimDirection.offset], [-1, ACTION_HEADS.aimDirection.size]);
         const fireLogits = logits.slice([0, ACTION_HEADS.fire.offset], [-1, ACTION_HEADS.fire.size]);
 
-        const movementLoss = tf.losses.softmaxCrossEntropy(tf.oneHot(movementLabels, ACTION_HEADS.movement.size), movementLogits);
-        const aimLoss = tf.losses.softmaxCrossEntropy(tf.oneHot(aimLabels, ACTION_HEADS.aimDirection.size), aimLogits);
-        const fireLoss = tf.losses.softmaxCrossEntropy(tf.oneHot(fireLabels, ACTION_HEADS.fire.size), fireLogits);
+        const movementLoss = tf.losses.softmaxCrossEntropy(movementLabels, movementLogits);
+        const aimLoss = tf.losses.softmaxCrossEntropy(aimLabels, aimLogits);
+        const fireLoss = tf.losses.softmaxCrossEntropy(fireLabels, fireLogits);
         return tf.mean(tf.addN([movementLoss, aimLoss, fireLoss]));
     });
 }
 
-async function calculateAccuracy(tf, model, inputs, labels) {
+function createOneHotTargets(tf, rawLabels) {
+    return tf.tidy(() => {
+        const columns = tf.unstack(rawLabels, 1);
+        const targets = tf.concat([
+            tf.oneHot(columns[0].asType('int32'), ACTION_HEADS.movement.size),
+            tf.oneHot(columns[1].asType('int32'), ACTION_HEADS.aimDirection.size),
+            tf.oneHot(columns[2].asType('int32'), ACTION_HEADS.fire.size)
+        ], 1);
+        columns.forEach(column => column.dispose());
+        return targets;
+    });
+}
+
+async function calculateAccuracy(tf, model, inputs, targets) {
     const logits = model.predict(inputs);
-    const labelColumns = tf.unstack(labels, 1);
     const results = {};
     for (const [name, head] of Object.entries(ACTION_HEADS)) {
         const prediction = logits.slice([0, head.offset], [-1, head.size]).argMax(1);
-        const labelIndex = name === 'movement' ? 0 : name === 'aimDirection' ? 1 : 2;
-        const accuracy = prediction.equal(labelColumns[labelIndex].asType('int32')).cast('float32').mean().dataSync()[0];
+        const expected = targets.slice([0, head.offset], [-1, head.size]).argMax(1);
+        const accuracy = prediction.equal(expected).cast('float32').mean().dataSync()[0];
         results[name] = accuracy;
         prediction.dispose();
+        expected.dispose();
     }
     logits.dispose();
-    labelColumns.forEach(column => column.dispose());
     return results;
 }
 
@@ -145,11 +157,13 @@ async function main() {
     console.log(`Loaded ${dataset.transitions} transitions from ${dataset.files} episode files.`);
 
     const inputs = tf.tensor2d(dataset.states, [dataset.transitions, OBSERVATION_SIZE]);
-    const labels = tf.tensor2d(dataset.labels, [dataset.transitions, 3], 'int32');
+    const rawLabels = tf.tensor2d(dataset.labels, [dataset.transitions, 3], 'int32');
+    const targets = createOneHotTargets(tf, rawLabels);
+    rawLabels.dispose();
     const model = createPolicy(tf);
     model.compile({ optimizer: tf.train.adam(0.0005), loss: imitationLoss(tf) });
 
-    await model.fit(inputs, labels, {
+    await model.fit(inputs, targets, {
         batchSize: Math.min(options.batchSize, dataset.transitions),
         epochs: options.epochs,
         validationSplit: 0.1,
@@ -161,7 +175,7 @@ async function main() {
         }
     });
 
-    const accuracy = await calculateAccuracy(tf, model, inputs, labels);
+    const accuracy = await calculateAccuracy(tf, model, inputs, targets);
     await savePolicy(tf, model, options.outputDirectory, {
         schemaVersion: 1,
         observationSize: OBSERVATION_SIZE,
@@ -183,7 +197,7 @@ async function main() {
     console.log(`Saved imitation policy to ${options.outputDirectory}`);
     console.log(`Training accuracy: movement=${accuracy.movement.toFixed(3)}, aim=${accuracy.aimDirection.toFixed(3)}, fire=${accuracy.fire.toFixed(3)}`);
     inputs.dispose();
-    labels.dispose();
+    targets.dispose();
     model.dispose();
 }
 
