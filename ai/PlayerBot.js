@@ -185,8 +185,6 @@ export class PlayerBot {
         // 3. WALL AVOIDANCE: Strongly repel from walls
         const margin = 150;
         const wallForce = 2.5;
-        const cw = (this.game.canvas.width > 0) ? this.game.canvas.width : window.innerWidth;
-        const ch = (this.game.canvas.height > 0) ? this.game.canvas.height : window.innerHeight;
 
         if (player.x < margin) avoidX += wallForce * (1 - player.x / margin);
         if (player.x > cw - margin) avoidX -= wallForce * (1 - (cw - player.x) / margin);
