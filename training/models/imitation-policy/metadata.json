@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "observationSize": 265,
+  "outputSize": 27,
+  "actionHeads": {
+    "movement": {
+      "offset": 0,
+      "size": 9
+    },
+    "aimDirection": {
+      "offset": 9,
+      "size": 16
+    },
+    "fire": {
+      "offset": 25,
+      "size": 2
+    }
+  },
+  "decisionIntervalMs": 250,
+  "algorithm": "behavioral-cloning",
+  "training": {
+    "transitions": 91213,
+    "episodes": 891,
+    "epochs": 25,
+    "batchSize": 512,
+    "accuracy": {
+      "movement": 0.6396017670631409,
+      "aimDirection": 0.6887943148612976,
+      "fire": 0.9992434978485107
+    },
+    "backend": "cpu",
+    "createdAt": "2026-07-16T23:17:42.974Z"
+  }
+}
