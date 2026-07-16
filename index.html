@@ -320,6 +320,10 @@
         const startBtn = document.getElementById("startBtn");
         const difficultyOptions = document.querySelectorAll('.difficulty-option');
         const botCheckbox = document.getElementById("botEnabled");
+        const query = new URLSearchParams(window.location.search);
+        const automatedCollection = query.get('collectData') === '1';
+        const collectionTarget = Math.max(1, Number.parseInt(query.get('collectTarget'), 10) || 50000);
+        const simulationStepsPerFrame = 30;
         
         const audio = new AudioService();
         const selectionSound = new Audio('./assets/select.mp3');
@@ -377,6 +381,7 @@
 
         let gameInstance = null;
         let animationFrameId = null;
+        let collectedTransitions = 0;
 
         const returnToMenu = () => {
             if (animationFrameId) {
@@ -398,22 +403,27 @@
             audio.playMenuAmbience();
         };
 
-        startBtn.onclick = (e) => {
-            if (e) e.stopPropagation();
-            
-            // Remove ambience listeners immediately to prevent this click from starting it
+        const startGame = (botMode, collectAutomatically) => {
             window.removeEventListener('click', startAmbience);
             window.removeEventListener('keydown', startAmbience);
-            
             audio.stopMenuAmbience();
             startModal.style.display = "none";
-            document.body.style.cursor = "none";
-            
+            document.body.style.cursor = collectAutomatically ? 'default' : 'none';
             resizeCanvas();
-            
-            const botMode = botCheckbox.checked;
-            gameInstance = new Game(canvas, selectedDifficulty, returnToMenu, botMode);
-            
+
+            gameInstance = new Game(
+                canvas,
+                selectedDifficulty,
+                returnToMenu,
+                botMode,
+                { automatedCollection: collectAutomatically }
+            );
+
+            if (collectAutomatically) {
+                runCollectionFrame();
+                return;
+            }
+
             function gameLoop(timestamp) {
                 if (!gameInstance) return;
                 
@@ -426,6 +436,42 @@
             }
             gameLoop(performance.now());
         };
+
+        const runCollectionFrame = async () => {
+            if (!gameInstance) return;
+
+            for (let step = 0; step < simulationStepsPerFrame && !gameInstance.gameOver; step++) {
+                gameInstance.update(16);
+            }
+
+            if (gameInstance.gameOver) {
+                const completedEpisode = gameInstance.episodeRecorder;
+                await completedEpisode.whenFlushed();
+                collectedTransitions += completedEpisode.transitionCount;
+                const complete = collectedTransitions >= collectionTarget;
+                window.swarmTraining.reportCollectionProgress({
+                    total: collectedTransitions,
+                    target: collectionTarget,
+                    complete
+                });
+
+                if (complete) {
+                    gameInstance.cleanup();
+                    gameInstance = null;
+                    return;
+                }
+                gameInstance.resetGame(true);
+            }
+
+            animationFrameId = requestAnimationFrame(runCollectionFrame);
+        };
+
+        startBtn.onclick = e => {
+            if (e) e.stopPropagation();
+            startGame(botCheckbox.checked, false);
+        };
+
+        if (automatedCollection) startGame(true, true);
     </script>
 </body>
 </html>

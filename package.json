@@ -6,9 +6,10 @@
   "scripts": {
     "start": "python -m http.server 4200",
     "start-exe": "electron .",
+    "collect-data": "electron . --collect-data",
     "build": "electron-builder",
-      "create-initial-model": "node training/createInitialModel.cjs",
-      "check-training-data": "node training/checkTrainingData.cjs",
+    "create-initial-model": "node training/createInitialModel.cjs",
+    "check-training-data": "node training/checkTrainingData.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {

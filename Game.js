@@ -10,12 +10,13 @@ import { BOT_DECISION_INTERVAL_MS } from './ai/BotModelSchema.js';
 import { encodeTeacherAction, EpisodeRecorder, RewardTracker } from './ai/BotTraining.js';
 
 export class Game {
-    constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null, botMode = false) {
+    constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null, botMode = false, options = {}) {
         this.canvas = canvas;
         // Fix: canvas dimensions might be 0 if called too early, but index.html handles resize.
         // Let's ensure they are set.
         this.ctx = canvas.getContext('2d');
-        this.audio = new AudioService();
+        this.automatedCollection = Boolean(options.automatedCollection);
+        this.audio = new AudioService({ muted: this.automatedCollection });
         this.difficulty = difficulty;
         this.onMainMenu = onMainMenu;
         this.botMode = botMode;
@@ -24,7 +25,7 @@ export class Game {
         this.lastBotDecisionTime = -Infinity;
         this.observationEncoder = botMode ? new BotObservationEncoder() : null;
         this.rewardTracker = botMode ? new RewardTracker() : null;
-        this.episodeRecorder = botMode ? new EpisodeRecorder() : null;
+        this.episodeRecorder = botMode ? this.createEpisodeRecorder() : null;
         
         // Difficulty settings
         let maxHP = 100;
@@ -267,7 +268,7 @@ export class Game {
         this.botInput = null;
         this.lastBotDecisionTime = -Infinity;
         if (this.rewardTracker) this.rewardTracker.reset();
-        if (this.botMode) this.episodeRecorder = new EpisodeRecorder();
+        if (this.botMode) this.episodeRecorder = this.createEpisodeRecorder();
         
         if (fromStart) {
             this.round = 0;
@@ -332,6 +333,12 @@ export class Game {
             }
         }
         return this.botInput;
+    }
+
+    createEpisodeRecorder() {
+        return new EpisodeRecorder({
+            source: this.automatedCollection ? 'heuristic-player-bot-automated' : 'heuristic-player-bot'
+        });
     }
 
     recordPlayerDamageDealt(amount) {

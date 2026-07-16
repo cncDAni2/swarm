@@ -6,6 +6,15 @@ Collect episodes in the Electron game. They are saved under:
 %APPDATA%/swarm/training/episodes
 ```
 
+For automatic, accelerated collection, run this from the repository root. The default target is 50,000 transitions; passing a number changes it:
+
+```powershell
+npm run collect-data
+npm run collect-data -- 100000
+```
+
+The Electron window title displays the completed transition count. The collector does not render frames or play game audio, automatically starts a new episode on death, and stops after completing the first episode that reaches the target.
+
 The game code and the trainer live in the same repository checkout. Episode files are user data, so Git does not copy them between machines. Run Electron with **BOT MÓD** enabled on the machine where you want to train, or copy completed `.jsonl` files and their matching `.metadata.json` files into a local folder.
 
 Validate the episodes produced by Electron on Windows with:
@@ -29,3 +38,5 @@ npm run create-initial-model
 For an RTX 5070, the trainer can run from this same checkout in Linux or WSL2. Install a current NVIDIA driver, CUDA libraries compatible with the installed TensorFlow.js Node GPU package, Node.js LTS, and then install `@tensorflow/tfjs-node-gpu` in that environment. The game itself does not need this native package.
 
 The trainer reads the JSONL episodes, trains on the GPU, and exports `model.json`, `weights.bin`, and an updated `metadata.json`. Those three files are the model artifact to import back into the Electron game.
+
+Each JSONL line is one imitation-learning transition: current observation (`state`), the heuristic bot's discrete action (`action`), reward, next observation (`nextState`), and the terminal flag (`done`). The first trainer will use `state` and `action` to reproduce the heuristic bot, then later reinforcement learning can use reward, nextState, and done to improve it.

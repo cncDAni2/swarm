@@ -67,18 +67,20 @@ export class RewardTracker {
 }
 
 export class EpisodeRecorder {
-    constructor() {
+    constructor({ source = 'heuristic-player-bot' } = {}) {
         this.bridge = globalThis.swarmTraining;
         this.sessionId = `episode-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         this.pending = null;
         this.buffer = [];
+        this.transitionCount = 0;
+        this.writeQueue = Promise.resolve();
         this.enabled = Boolean(this.bridge);
 
         if (this.enabled) {
-            this.bridge.startSession({
+            this.writeQueue = this.bridge.startSession({
                 sessionId: this.sessionId,
-                metadata: createBotMetadata({ source: 'heuristic-player-bot' })
-            });
+                metadata: createBotMetadata({ source })
+            }).catch(error => console.error('Unable to start training episode:', error));
         }
     }
 
@@ -92,6 +94,7 @@ export class EpisodeRecorder {
                 nextState: Array.from(observation),
                 done: false
             });
+            this.transitionCount++;
         }
         this.pending = { observation: Array.from(observation), action };
         this.flush(false);
@@ -106,6 +109,7 @@ export class EpisodeRecorder {
             nextState: Array.from(finalObservation),
             done: true
         });
+        this.transitionCount++;
         this.pending = null;
         this.flush(true);
     }
@@ -113,6 +117,12 @@ export class EpisodeRecorder {
     flush(force) {
         if (!this.enabled || this.buffer.length === 0 || (!force && this.buffer.length < 32)) return;
         const transitions = this.buffer.splice(0);
-        this.bridge.appendTransitions({ sessionId: this.sessionId, transitions, complete: force });
+        this.writeQueue = this.writeQueue
+            .then(() => this.bridge.appendTransitions({ sessionId: this.sessionId, transitions, complete: force }))
+            .catch(error => console.error('Unable to save training transitions:', error));
+    }
+
+    whenFlushed() {
+        return this.writeQueue;
     }
 }

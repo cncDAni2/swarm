@@ -1,5 +1,6 @@
 export class AudioService {
-    constructor() {
+    constructor({ muted = false } = {}) {
+        this.muted = muted;
         this.sounds = {
             shoot: [],
             enemyShoot: null,
@@ -164,7 +165,7 @@ export class AudioService {
     }
 
     _playSound(sound, overlap = false) {
-        if (!sound) return;
+        if (this.muted || !sound) return;
         
         if (overlap) {
             const clone = sound.cloneNode();
