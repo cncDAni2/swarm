@@ -4,9 +4,19 @@ const path = require('path');
 const observationSize = 265;
 
 async function main() {
-    const directory = process.argv[2];
-    if (!directory) {
-        throw new Error('Usage: npm run check-training-data -- <episode-directory>');
+    const directory = process.argv[2] || (
+        process.env.APPDATA
+            ? path.join(process.env.APPDATA, 'swarm', 'training', 'episodes')
+            : path.join(process.cwd(), 'training', 'data', 'episodes')
+    );
+
+    try {
+        await fs.access(directory);
+    } catch {
+        throw new Error(
+            `Training data directory does not exist: ${directory}\n` +
+            'Start an Electron game with BOT MÓD enabled and finish an episode, or pass a copied episode directory explicitly.'
+        );
     }
 
     const files = (await fs.readdir(directory)).filter(file => file.endsWith('.jsonl'));
