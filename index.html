@@ -301,6 +301,11 @@
                     </div>
                 </div>
 
+                <div style="margin-top: 20px; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;" id="botToggleContainer">
+                    <input type="checkbox" id="botEnabled" style="width: 20px; height: 20px; cursor: pointer;">
+                    <label for="botEnabled" style="cursor: pointer;">BOT MÓD (Önműködő játék)</label>
+                </div>
+
                 <button id="startBtn">JÁTÉK INDÍTÁSA</button>
             </div>
         </div>
@@ -314,6 +319,7 @@
         const startModal = document.getElementById("startModal");
         const startBtn = document.getElementById("startBtn");
         const difficultyOptions = document.querySelectorAll('.difficulty-option');
+        const botCheckbox = document.getElementById("botEnabled");
         
         const audio = new AudioService();
         const selectionSound = new Audio('./assets/select.mp3');
@@ -405,7 +411,8 @@
             
             resizeCanvas();
             
-            gameInstance = new Game(canvas, selectedDifficulty, returnToMenu);
+            const botMode = botCheckbox.checked;
+            gameInstance = new Game(canvas, selectedDifficulty, returnToMenu, botMode);
             
             function gameLoop(timestamp) {
                 if (!gameInstance) return;

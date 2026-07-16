@@ -4,14 +4,19 @@ import { AudioService } from './AudioService.js';
 import { Boss } from './ai/Boss.js';
 import { createPlayerShotLane } from './ai/playerShotEvasion.js';
 import { applyTankPhysics } from './tankPhysics.js';
+import { PlayerBot } from './ai/PlayerBot.js';
 
 export class Game {
-    constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null) {
+    constructor(canvas, difficulty = 'ultra-violence', onMainMenu = null, botMode = false) {
         this.canvas = canvas;
+        // Fix: canvas dimensions might be 0 if called too early, but index.html handles resize.
+        // Let's ensure they are set.
         this.ctx = canvas.getContext('2d');
         this.audio = new AudioService();
         this.difficulty = difficulty;
         this.onMainMenu = onMainMenu;
+        this.botMode = botMode;
+        this.bot = botMode ? new PlayerBot(this) : null;
         
         // Difficulty settings
         let maxHP = 100;
@@ -26,8 +31,8 @@ export class Game {
         }
 
         this.player = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
             size: 50,
             vx: 0,
             vy: 0,
@@ -123,7 +128,7 @@ export class Game {
         this.wormholeInterval = 40000;
         this.wormholePatternCounter = 0;
         
-        this.round = 2;
+        this.round = 0;
         this.roundDisplayTimer = -5000;
         this.roundDisplayDuration = 3000;
         this.roundTextAlpha = 0;
@@ -136,6 +141,7 @@ export class Game {
         this.playedDamageHeavy = false;
         
         this.gameTime = 0;
+        this.deltaTime = 16;
         this.paused = false;
         
         // Tracking for behavior re-evaluation
@@ -232,8 +238,13 @@ export class Game {
         this.player.maxHealth = maxHP;
         this.player.energy = 100;
         this.player.isExhausted = false;
-        this.player.x = this.canvas.width / 2;
-        this.player.y = this.canvas.height / 2;
+        
+        // Ensure valid starting position even if canvas width/height are 0
+        const startX = (this.canvas.width > 0) ? this.canvas.width / 2 : window.innerWidth / 2;
+        const startY = (this.canvas.height > 0) ? this.canvas.height / 2 : window.innerHeight / 2;
+        
+        this.player.x = startX || 400;
+        this.player.y = startY || 300;
         this.player.vx = 0;
         this.player.vy = 0;
         
@@ -573,6 +584,10 @@ export class Game {
 
     update(deltaTime) {
         if (this.gameOver || this.paused) return;
+        // Basic protection against invalid deltaTime
+        if (isNaN(deltaTime) || deltaTime <= 0) return;
+        
+        this.deltaTime = deltaTime;
         this.gameTime += deltaTime;
         const currentTime = this.gameTime;
         
@@ -606,6 +621,14 @@ export class Game {
         if (this.electricBeam.isCharging) {
             this.player.vx = 0;
             this.player.vy = 0;
+            
+            // If bot is playing, it should keep aiming at its target during charge
+            if (this.botMode) {
+                const botInput = this.bot.update(this.player, this.enemies, this.bullets, currentTime);
+                this.mousePos.x = botInput.mouseX;
+                this.mousePos.y = botInput.mouseY;
+            }
+
             const dxAim = this.mousePos.x - this.player.x;
             const dyAim = this.mousePos.y - this.player.y;
             this.electricBeam.angle = Math.atan2(dyAim, dxAim);
@@ -617,10 +640,29 @@ export class Game {
         } else {
             let ax = 0;
             let ay = 0;
-            if (this.keys['KeyW'] || this.keys['ArrowUp']) ay -= this.player.accel;
-            if (this.keys['KeyS'] || this.keys['ArrowDown']) ay += this.player.accel;
-            if (this.keys['KeyA'] || this.keys['ArrowLeft']) ax -= this.player.accel;
-            if (this.keys['KeyD'] || this.keys['ArrowRight']) ax += this.player.accel;
+
+            if (this.botMode) {
+                const botInput = this.bot.update(this.player, this.enemies, this.bullets, currentTime);
+                ax = (botInput.ax || 0) * this.player.accel;
+                ay = (botInput.ay || 0) * this.player.accel;
+                this.mousePos.x = botInput.mouseX || this.player.x;
+                this.mousePos.y = botInput.mouseY || this.player.y;
+                
+                if (isNaN(ax)) ax = 0;
+                if (isNaN(ay)) ay = 0;
+                if (isNaN(this.mousePos.x)) this.mousePos.x = this.player.x;
+                if (isNaN(this.mousePos.y)) this.mousePos.y = this.player.y;
+
+                this.isMouseDown = botInput.isMouseDown;
+                if (botInput.tryElectricBeam) {
+                    this.tryStartElectricBeam();
+                }
+            } else {
+                if (this.keys['KeyW'] || this.keys['ArrowUp']) ay -= this.player.accel;
+                if (this.keys['KeyS'] || this.keys['ArrowDown']) ay += this.player.accel;
+                if (this.keys['KeyA'] || this.keys['ArrowLeft']) ax -= this.player.accel;
+                if (this.keys['KeyD'] || this.keys['ArrowRight']) ax += this.player.accel;
+            }
 
             // Normalize acceleration for diagonal movement
             if (ax !== 0 && ay !== 0) {
@@ -1446,20 +1488,26 @@ export class Game {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Player Aura Effect
+        const px = this.player.x || 0;
+        const py = this.player.y || 0;
         const auraRadius = 220;
-        const auraGrad = this.ctx.createRadialGradient(
-            this.player.x, this.player.y, 0,
-            this.player.x, this.player.y, auraRadius
-        );
-        auraGrad.addColorStop(0, 'rgba(135, 206, 235, 0.33)'); // SkyBlue with some opacity
-        auraGrad.addColorStop(1, 'rgba(135, 206, 235, 0)');   // Completely transparent at edges
+        
+        // Ensure values are finite to avoid createRadialGradient error
+        if (Number.isFinite(px) && Number.isFinite(py)) {
+            const auraGrad = this.ctx.createRadialGradient(
+                px, py, 0,
+                px, py, auraRadius
+            );
+            auraGrad.addColorStop(0, 'rgba(135, 206, 235, 0.33)'); // SkyBlue with some opacity
+            auraGrad.addColorStop(1, 'rgba(135, 206, 235, 0)');   // Completely transparent at edges
 
-        this.ctx.save();
-        this.ctx.fillStyle = auraGrad;
-        this.ctx.beginPath();
-        this.ctx.arc(this.player.x, this.player.y, auraRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
+            this.ctx.save();
+            this.ctx.fillStyle = auraGrad;
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, auraRadius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+        }
 
         // Draw Barriers
         const barriers = this.getBarriers();
