@@ -1,53 +1,34 @@
-# SWARM Game - AI Agent Instructions
+# SWARM Agent Guide
 
-Welcome to the **SWARM** codebase. This is a top-down, swarm-style shooter built with vanilla JavaScript and HTML5 Canvas.
+SWARM is a top-down swarm shooter built with vanilla JavaScript, HTML5 Canvas, and Electron. Keep changes small and follow the existing class-based ES module structure.
 
-## Tech Stack
-- **Language**: JavaScript (ES6 Modules)
-- **Rendering**: HTML5 Canvas API
-- **Platform**: Electron (for desktop distribution)
-- **Local Development**:
-  - Web: Requires a local HTTP server (`python -m http.server 8000`).
-  - Desktop: `npm start` to run in Electron.
-  - Build: `npm run build` to generate a portable Windows executable in `dist/`.
+## Run And Build
 
-## Architecture Overview
-The project follows a modular, class-based architecture to separate concerns:
+- `npm start`: serve the web game at `http://localhost:4200`.
+- `npm start-exe`: run the Electron application.
+- `npm run build`: create the portable Windows build in `dist/`.
+- There is no automated test suite; `npm test` intentionally fails. After gameplay changes, run the relevant entry point and exercise the affected behavior.
 
-- **[index.html](index.html)**: The entry point for web.
-- **[main.js](main.js)**: The Electron main process entry point.
-- **[Game.js](Game.js)**: The core engine. Manages the main game loop (`update`, `draw`), player state, collection of entities (enemies, bullets, explosions), and user input.
-- **[Enemy.js](Enemy.js)**: Represents an enemy entity. Handles its own drawing, health, stun state, and delegates movement/combat logic to an AI module.
-- **[Boss.js](Boss.js)**: A specialized entity with multiple phases, beam attacks, and minion spawning.
-- **[AudioService.js](AudioService.js)**: Handles preloading and playback of game audio (lasers, explosions, ambient music).
-- **[Wormhole.js](Wormhole.js)**: Handles the spawning logic for waves of enemies. Supports patterns like `duo` (Melee + Rifleman) and `flanker`.
+## Architecture
 
+- [Game.js](Game.js): owns the update/draw loop, input, collision handling, and master entity collections. Keep `draw` render-only.
+- [Enemy.js](Enemy.js): instantiates type-specific AI, owns type stats and visuals, and applies shared forward-only tank physics from [tankPhysics.js](tankPhysics.js).
+- [Wormhole.js](Wormhole.js): owns wave composition and spawn sequencing.
+- [ai/](ai/): movement and combat behavior modules, plus [ai/Boss.js](ai/Boss.js), player bot logic, and shot-lane evasion helpers.
+- [AudioService.js](AudioService.js), [index.html](index.html), [main.js](main.js), and [preload.js](preload.js): audio, web entry point, and Electron integration.
 
-- **[ai/](ai/)**: Contains behavior modules for different enemy types.
-  - `BasicMeleeAI.js`: Chase logic with separation steering and partner protection.
-  - `BasicRiflemanAI.js`: Ranged logic with projectile prediction and friendly-fire avoidance.
-  - `FlankerAI.js`: Circular movement behavior.
-  - `SkyPulseAI.js`: Aerial behavior firing distinct "rockets".
+## Project Conventions
 
-## Key Conventions & Patterns
-- **Entity Identification**: Bullets have a `source` property to avoid hitting the entity that fired them.
-- **AI Separation**: All AI classes must implement an `update` method and should be stored in the `ai/` folder.
-- **Coordination**: Ground units are dynamically assigned to Riflemen as "bodyguards" by the `Game` class whenever their counts change.
-- **State Management**: The `Game` class holds the master lists of all active entities.
-- **Visuals**: Sprites are loaded via `preload.js` and managed in an `assets` object passed to `draw` methods.
-  - `Melee`: Red square footprint.
-  - `Rifleman`: Triangle with a pulsing red aura.
-  - `Flanker`: Cyan circle.
-  - `SkyPulse`: Blue/cyan pulsing flyer.
-  - Projectiles: "motion blur" lines or rockets.
+- Enemy type identifiers are lowercase strings: `melee`, `rifleman`, `flanker`, `sky-pulse`, and `revi`.
+- Adding an enemy normally requires: an AI class in `ai/`, an import/branch plus physics/stats/visual mapping in `Enemy.js`, and a `Wormhole.js` spawn registration. Check `Game.js` too when it owns type-specific collision, projectiles, or coordination.
+- AI chooses movement through `setMoveIntent` and optional `setLookTarget`; `Enemy` applies physics once after AI updates. Do not mutate position or velocity directly unless a behavior deliberately requires it, then resynchronize the forward speed.
+- Bullets identify their origin using `source`; preserve this to avoid self-hits. AI fire rates and state changes use `currentTime` or `deltaTime` rather than frame counts.
+- Game assets are passed to draw methods through the shared `assets` object. Keep fallback Canvas rendering functional when an asset is unavailable.
 
-## Instructions & Skills
-- **Game Engine**: See [.github/instructions/Game.js.instructions.md](.github/instructions/Game.js.instructions.md)
-- **AI Modules**: See [.github/instructions/AI.instructions.md](.github/instructions/AI.instructions.md)
-- **New Enemies**: Use skill `new-enemy-type` ([SKILL.md](.github/skills/new-enemy-type/SKILL.md))
-- **Evasion Logic**: Use skill `evasion-logic` ([SKILL.md](.github/skills/evasion-logic/SKILL.md))
-- **Projectile Prediction**: Use skill `bullet-prediction` ([SKILL.md](.github/skills/bullet-prediction/SKILL.md))
+## Scoped Guidance
 
-## Common Tasks
-- **Adding an Enemy**: Create a new AI class in `ai/`, then update `Wormhole.js` or `Game.js` to instantiate it.
-- **Adjusting Balance**: Health and damage values are currently hardcoded in `Enemy.js` and `Game.js`.
+- Editing [Game.js](Game.js): follow [.github/instructions/Game.js.instructions.md](.github/instructions/Game.js.instructions.md).
+- Editing an AI module: follow [.github/instructions/AI.instructions.md](.github/instructions/AI.instructions.md).
+- Adding an enemy: use [.github/skills/new-enemy-type/SKILL.md](.github/skills/new-enemy-type/SKILL.md).
+- Tuning projectile evasion: use [.github/skills/evasion-logic/SKILL.md](.github/skills/evasion-logic/SKILL.md).
+- Adding predictive ranged attacks: use [.github/skills/bullet-prediction/SKILL.md](.github/skills/bullet-prediction/SKILL.md).

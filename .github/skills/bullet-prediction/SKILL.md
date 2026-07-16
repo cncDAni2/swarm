@@ -1,3 +1,8 @@
+---
+name: bullet-prediction
+description: "Use when: adding or modifying ranged enemy aiming, target leading, projectile prediction, or friendly-fire checks."
+---
+
 # Bullet Prediction Skill
 
 Use this skill when implementing or modifying ranged AI that needs to lead their shots based on target velocity.
@@ -39,3 +44,7 @@ Ranged units should avoid firing if a teammate is in the line of fire.
 
 ## Coordinate Awareness
 Ground units should only predict horizontal movement if the game is strictly 2D. In SWARM, all units are on the same plane, so simple 2D vector prediction is sufficient.
+
+## Verify
+
+Exercise the firing enemy with a stationary player and with continuous lateral movement. Confirm it keeps its intended cooldown, leads only moving targets, and refuses a shot when an ally occupies its firing lane.
