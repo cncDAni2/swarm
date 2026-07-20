@@ -5,6 +5,7 @@ import { ManualBot } from './ManualBot.js';
 import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot.js';
 import { Sonnet5MaxBot } from './Sonnet5MaxBot.js';
 import { GeminiThreeFlashBot } from './GeminiThreeFlashBot-v2.js';
+import { TerraMaxBot } from './TerraMaxBot.js';
 
 const botClasses = new Map();
 
@@ -49,3 +50,4 @@ registerBot(IdleObserverBot);
 registerBot(GeminiThreeFlashBot);
 registerBot(GeminiThreeFlashBot2);
 registerBot(Sonnet5MaxBot);
+registerBot(TerraMaxBot);
