@@ -2,6 +2,7 @@ import { BotController } from './BotController.js';
 import { IdleObserverBot } from './IdleObserverBot.js';
 import { IdleSentinelBot } from './IdleSentinelBot.js';
 import { ManualBot } from './ManualBot.js';
+import { GeminiThreeFlashBot } from './GeminiThreeFlashBot.js';
 
 const botClasses = new Map();
 
@@ -43,3 +44,4 @@ export function createBotController(id) {
 registerBot(ManualBot);
 registerBot(IdleSentinelBot);
 registerBot(IdleObserverBot);
+registerBot(GeminiThreeFlashBot);

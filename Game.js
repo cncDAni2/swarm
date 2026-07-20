@@ -303,6 +303,8 @@ export class Game {
             self: Object.freeze({
                 x: bot.x,
                 y: bot.y,
+                vx: bot.vx,
+                vy: bot.vy,
                 health: bot.health,
                 maxHealth: bot.maxHealth,
                 energy: bot.energy,
@@ -311,9 +313,21 @@ export class Game {
             opponent: Object.freeze({
                 x: opponent.x,
                 y: opponent.y,
+                vx: opponent.vx,
+                vy: opponent.vy,
                 health: opponent.health,
-                maxHealth: opponent.maxHealth
+                maxHealth: opponent.maxHealth,
+                energy: opponent.energy
             }),
+            bullets: this.bullets.map(b => Object.freeze({
+                x: b.x,
+                y: b.y,
+                vx: b.vx,
+                vy: b.vy,
+                radius: b.radius,
+                damage: b.damage,
+                isEnemy: b.source !== bot
+            })),
             arena: Object.freeze({ width: this.canvas.width, height: this.canvas.height }),
             matchEnded: this.matchEnded
         });
