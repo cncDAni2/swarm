@@ -1,8 +1,8 @@
 import { BotController } from './BotController.js';
 
-export class GeminiThreeFlashBot2 extends BotController {
-    static id = 'gemini-3-flash-2';
-    static displayName = 'Gemini 3 Flash WP | V2';
+export class GeminiThreeFlashBot extends BotController {
+    static id = 'gemini-3-flash';
+    static displayName = 'Gemini 3 Flash WP';
 
     constructor() {
         super();
