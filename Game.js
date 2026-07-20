@@ -147,7 +147,7 @@ export class Game {
             vy: Math.sin(angle) * bot.bulletSpeed,
             radius: isPowerful ? 6 : 4,
             color: isPowerful ? '#87ceeb' : '#f4d35e',
-            damage: isPowerful ? 8 : 3,
+            damage: isPowerful ? 20 : 12,
             source: bot
         });
         bot.energy = Math.max(0, bot.energy - 2);
@@ -161,13 +161,14 @@ export class Game {
 
     regenerateEnergy(bot, deltaTime) {
         if (this.gameTime - bot.lastShotTime >= 2000) {
-            bot.energy = Math.min(bot.maxEnergy, bot.energy + 3 * deltaTime / 1000);
+            bot.energy = Math.min(bot.maxEnergy, bot.energy + 50 * deltaTime / 1000);
         }
     }
 
     updateBullets(scale) {
         for (let index = this.bullets.length - 1; index >= 0; index--) {
             const bullet = this.bullets[index];
+            if (!bullet || !bullet.x || !bullet.y) break;
             bullet.x += bullet.vx * scale;
             bullet.y += bullet.vy * scale;
             const target = this.bots.find(bot => bot !== bullet.source && bot.health > 0
