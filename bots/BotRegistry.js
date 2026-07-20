@@ -7,6 +7,7 @@ import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot.js';
 import { Sonnet5MaxBot } from './Sonnet5MaxBot.js';
 import { GeminiThreeFlashBot } from './GeminiThreeFlashBot-v2.js';
 import { TerraMaxBot } from './TerraMaxBot.js';
+import { TerraMedBot } from './TerraMedBot.js';
 
 const botClasses = new Map();
 
@@ -53,3 +54,4 @@ registerBot(GeminiThreeFlashBot2);
 registerBot(Sonnet5MaxBot);
 registerBot(TerraMaxBot);
 registerBot(LunaMaxBot);
+registerBot(TerraMedBot);
