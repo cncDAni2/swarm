@@ -41,5 +41,4 @@ export function createBotController(id) {
 }
 
 registerBot(ManualBot);
-registerBot(IdleSentinelBot);
 registerBot(IdleObserverBot);
