@@ -168,6 +168,7 @@ export class Game {
     updateBullets(scale) {
         for (let index = this.bullets.length - 1; index >= 0; index--) {
             const bullet = this.bullets[index];
+            if (!bullet || !bullet.x || !bullet.y) break;
             bullet.x += bullet.vx * scale;
             bullet.y += bullet.vy * scale;
             const target = this.bots.find(bot => bot !== bullet.source && bot.health > 0
@@ -175,7 +176,10 @@ export class Game {
             if (target) {
                 target.health = Math.max(0, target.health - bullet.damage);
                 this.bullets.splice(index, 1);
-                if (target.health === 0) this.endMatch(bullet.source);
+                if (target.health === 0) {
+                    this.endMatch(bullet.source);
+                    return;
+                }
                 continue;
             }
             const outsideArena = bullet.x < -bullet.radius || bullet.x > this.canvas.width + bullet.radius
