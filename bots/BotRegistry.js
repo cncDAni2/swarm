@@ -3,11 +3,12 @@ import { IdleObserverBot } from './IdleObserverBot.js';
 import { LunaMaxBot } from './LunaMaxBot.js';
 import { LunaLowBot } from './LunaLowBot.js';
 import { ManualBot } from './ManualBot.js';
-import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot.js';
+import { GeminiThreeFlashBot3 } from './GeminiThreeFlashBot.js';
 import { Sonnet5MaxBot } from './Sonnet5MaxBot.js';
-import { GeminiThreeFlashBot } from './GeminiThreeFlashBot-v2.js';
+import { GeminiThreeFlashBot } from './GeminiThreeFlashBot-v1.js';
 import { TerraMaxBot } from './TerraMaxBot.js';
 import { TerraMedBot } from './TerraMedBot.js';
+import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot-v2.js';
 
 const botClasses = new Map();
 
@@ -50,6 +51,7 @@ registerBot(ManualBot);
 registerBot(IdleObserverBot);
 registerBot(GeminiThreeFlashBot);
 registerBot(GeminiThreeFlashBot2);
+registerBot(GeminiThreeFlashBot3);
 registerBot(Sonnet5MaxBot);
 registerBot(TerraMaxBot);
 registerBot(LunaMaxBot);
