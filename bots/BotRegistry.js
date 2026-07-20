@@ -1,7 +1,7 @@
 import { BotController } from './BotController.js';
 import { IdleObserverBot } from './IdleObserverBot.js';
-import { IdleSentinelBot } from './IdleSentinelBot.js';
 import { LunaMaxBot } from './LunaMaxBot.js';
+import { LunaLowBot } from './LunaLowBot.js';
 import { ManualBot } from './ManualBot.js';
 import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot.js';
 import { Sonnet5MaxBot } from './Sonnet5MaxBot.js';
@@ -47,7 +47,6 @@ export function createBotController(id) {
 }
 
 registerBot(ManualBot);
-registerBot(IdleSentinelBot);
 registerBot(IdleObserverBot);
 registerBot(GeminiThreeFlashBot);
 registerBot(GeminiThreeFlashBot2);
@@ -55,3 +54,4 @@ registerBot(Sonnet5MaxBot);
 registerBot(TerraMaxBot);
 registerBot(LunaMaxBot);
 registerBot(TerraMedBot);
+registerBot(LunaLowBot);

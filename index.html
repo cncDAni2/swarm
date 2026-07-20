@@ -121,8 +121,21 @@
             });
             select.value = selectedId;
         };
-        populateBotSelect(leftBot, 'idle-sentinel');
+        populateBotSelect(leftBot, 'manual');
         populateBotSelect(rightBot, 'idle-observer');
+
+        const rematch = () => {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (game) game.cleanup();
+            game = null;
+            startModal.style.display = 'grid';
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'r' && game && game.matchEnded) {
+                rematch();
+            }
+        });
 
         const updateManualOption = (changedSelect, otherSelect) => {
             const manualOption = [...otherSelect.options].find(option => option.value === 'manual');
