@@ -1,498 +1,159 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SWARM Game</title>
+    <title>SWARM Arena</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: black; display: flex; justify-content: center; align-items: center; cursor: default; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
-        canvas { display: block; }
-
-        #startModal {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-            backdrop-filter: blur(5px);
+        :root {
+            color-scheme: dark;
+            --ink: #10151b;
+            --panel: #1b252d;
+            --line: #38515e;
+            --sky: #87ceeb;
+            --gold: #f4b942;
+            --text: #f7f7f2;
+            --muted: #aab8bd;
         }
 
-        .modal-content {
-            background: #1a1a1a;
-            padding: 40px;
-            border-radius: 15px;
-            border: 2px solid #87CEEB;
-            max-width: 800px;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 0 30px rgba(135, 206, 235, 0.3);
-            text-align: center;
-        }
-
-        .enemy-info {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            margin-bottom: 20px;
-            text-align: left;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px;
-            border-radius: 8px;
-        }
-
-        .enemy-preview {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            margin-right: 20px;
-            min-width: 80px;
-            background: black;
-            padding-top: 6px;
-            flex-shrink: 0;
-        }
-
-        .enemy-details {
-            flex: 1;
-            min-width: 250px;
-        }
-
-        .enemy-preview img {
-            width: 64px;
-            height: 64px;
-            border-radius: 4px;
-            margin-bottom: 5px;
-            display: block;
-        }
-
-        .enemy-preview img.rotating {
-            background: transparent;
-            border-radius: 50%;
-        }
-
-        .stats {
-            font-size: 1em;
-            white-space: nowrap;
-        }
-
-        .enemy-details h3 { margin: 0 0 5px 0; color: #87CEEB; }
-        .enemy-details p { margin: 0; font-size: 0.9em; opacity: 0.8; }
-
-        #startBtn {
-            margin-top: 30px;
-            padding: 15px 50px;
-            font-size: 1.5em;
-            background: #87CEEB;
-            color: black;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: transform 0.2s, background 0.2s;
-        }
-
-        #startBtn:hover {
-            background: #b0e2ff;
-            transform: scale(1.05);
-        }
-
-        h1 { color: #87CEEB; margin-top: 0; }
-
-        @font-face {
-            font-family: 'KnightWarrior';
-            src: url('./assets/KnightWarrior-w16n8.otf') format('opentype');
-        }
-
-        .difficulty-selection {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .difficulty-wrapper {
-            width: 350px;
-            margin: 30px auto 0;
-            padding: 20px;
-            background: rgba(135, 206, 235, 0.05);
-            border: 1px solid rgba(135, 206, 235, 0.2);
-            border-radius: 10px;
-        }
-
-        .difficulty-wrapper h2 {
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 1.2rem;
-            color: #87CEEB;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        .tutorial-box {
-            margin: 20px 0;
-            padding: 15px;
-            background: rgba(135, 206, 235, 0.1);
-            border-left: 4px solid #87CEEB;
-            border-radius: 4px;
-            text-align: left;
-        }
-
-        .tutorial-box p {
+        * { box-sizing: border-box; }
+        body {
             margin: 0;
-            font-size: 0.95rem;
-            line-height: 1.4;
+            min-height: 100vh;
+            overflow: hidden;
+            background: var(--ink);
+            color: var(--text);
+            font-family: "Trebuchet MS", sans-serif;
         }
-
-        .section-title {
-            color: #87CEEB;
-            text-align: left;
-            font-size: 1.5rem;
-            margin: 20px 0 15px 0;
-            border-bottom: 1px solid rgba(135, 206, 235, 0.3);
-            padding-bottom: 5px;
+        canvas { display: block; }
+        #startModal {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: rgba(10, 15, 19, 0.94);
         }
-
-        .difficulty-option {
-            display: flex;
-            align-items: center;
-            color: #ff0000;
-            font-family: 'KnightWarrior', serif;
+        .setup {
+            width: min(620px, 100%);
+            border: 1px solid var(--line);
+            background: var(--panel);
+            padding: 32px;
+            box-shadow: 12px 12px 0 rgba(0, 0, 0, 0.28);
+        }
+        h1 {
+            margin: 0;
+            color: var(--sky);
             font-size: 2.5rem;
+            letter-spacing: 0;
+        }
+        .subtitle { color: var(--muted); margin: 8px 0 30px; }
+        .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .slot { border-top: 3px solid var(--gold); padding-top: 12px; }
+        label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
+        select, button {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 0;
+            font: inherit;
+        }
+        select { padding: 12px; color: var(--text); background: var(--ink); }
+        .controls { margin: 28px 0; color: var(--muted); line-height: 1.6; }
+        button {
+            padding: 14px 20px;
+            background: var(--sky);
+            color: var(--ink);
             cursor: pointer;
-            opacity: 0.5;
-            transition: opacity 0.3s;
-            user-select: none;
+            font-weight: 700;
         }
-
-        .difficulty-option.selected {
-            opacity: 1;
-        }
-
-        .difficulty-option img.select-icon {
-            width: 1.5rem;
-            margin-right: 1rem;
-            display: none;
-        }
-
-        .difficulty-option.selected img.select-icon {
-            display: block;
-        }
-
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        .rotating {
-            animation: rotate 15s linear infinite;
-            transform-origin: center center;
+        button:hover { background: #bde8f7; }
+        @media (max-width: 520px) {
+            .setup { padding: 24px; }
+            .slots { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div id="startModal">
-        <div class="modal-content">
-            <h1>SWARM</h1>
-            
-            <div class="tutorial-box">
-                <p><strong>Bevetés:</strong> Irányítsd a karaktered a <strong>WASD</strong> billentyűkkel, és tüzelj a <strong>bal/jobb egérgombbal</strong> az ellenséges hordákra. Éld túl az ellenfél végtelen hullámait, és tarts ki, ameddig csak bírsz a végtelen pokolban!</p>
-                <p><strong>Plazmafegyver (bal klikk):</strong> Energia alapú fegyver, amely magas töltöttség mellett erősebbet lő. Killek után energiát kapsz, tüzelés nélkül pedig idővel újratölt.</p>
-                <p><strong>Elektromos sugár (jobb klikk):</strong> Elektromos sugarat bocsát ki, amely sebzi az ellenséget és területi hatással is rendelkezik. Nagy mennyiségű energiát fogyaszt.</p>
-            </div>
-
-            <div class="section-title">Ellenfelek</div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/BasicMelee.png" alt="Basic Melee">
-                    <div class="stats">❤️ 5 ⚔️ 3</div>
+    <section id="startModal" aria-label="Arena setup">
+        <div class="setup">
+            <h1>SWARM ARENA</h1>
+            <p class="subtitle">Select the two bot placeholders that enter the arena.</p>
+            <div class="slots">
+                <div class="slot">
+                    <label for="leftBot">LEFT SIDE</label>
+                    <select id="leftBot"></select>
                 </div>
-                <div class="enemy-details">
-                    <h3>Melee Unit</h3>
-                    <p>Tank, közelharci egység. Falkákban támad, feladata megvédeni a Rifleman-okat.</p>
+                <div class="slot">
+                    <label for="rightBot">RIGHT SIDE</label>
+                    <select id="rightBot"></select>
                 </div>
             </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/Rifle.png" alt="Rifleman">
-                    <div class="stats">❤️ 1 ⚔️ 2x3</div>
-                </div>
-                <div class="enemy-details">
-                    <h3>Rifleman</h3>
-                    <p>Közép-távolsági gépfegyveres lövész. Megáll tüzelni és képes burst módban leadni a lövéseket. Lövése lehet prediktív vagy normál. Képes társait is sebezni, de nem lő rá direktbe, és a társak utat fognak nyitni neki ha lő.</p>
-                </div>
-            </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/flanker.png" alt="Flanker">
-                    <div class="stats">❤️ 3 ⚔️ 3</div>
-                </div>
-                <div class="enemy-details">
-                    <h3>Flanker</h3>
-                    <p>Közelharci egység, feladata elzárni az utadat, és oldalról támadni. Két csoportban támadnak. Lövedék-kerülő.</p>
-                </div>
-            </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/skypulse.png" alt="SkyPulse">
-                    <div class="stats">❤️ 3 ⚔️ 5</div>
-                </div>
-                <div class="enemy-details">
-                    <h3>SkyPulse</h3>
-                    <p>Repülő egység. Homing rakétákat lő, amik hatalmasat robbannak - a robbanások minimálisan a többi szörnyet is sebzik. Átrepül más egységek felett mind az egység, mind a lövedéke. Távolságot tart a játékostól, és lövedék-kerülő</p>
-                </div>
-            </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/revi-1.png" alt="Revi" id="reviPreview">
-                    <div class="stats">❤️ 20 ⚔️ 20</div>
-                </div>
-                <div class="enemy-details">
-                    <h3>Revi</h3>
-                    <p>A 4. fordulótól megjelenő elit egység. Kiszámíthatatlan mozgás után egy pusztító sugárnyalábbal veszi célba a játékost. A sugár ellen csak a pálya közepén megjelenő sárga falak nyújtanak fedezéket.</p>
-                </div>
-            </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/boss-1.png" alt="Boss">
-                    <div class="stats">❤️ 125 <br>⚔️ 30, 15</div>
-                </div>
-                <div class="enemy-details">
-                    <h3>Anomaly Core (Boss)</h3>
-                    <p>A játék főellensége. Folyamatosan éleszt szörnyeket. Két fázissal rendelkezik, 50% HP-nál alakot vált, rengeteg szörny jön ki belőle és időlegesen sérthetetlenné válik.<br>
-                        Két támadása van: <br>
-                        <strong>Phase Beams:</strong> 8 irányú pusztító sugárnyaláb (30 sebzés).<br>
-                        <strong>Spiral Stream:</strong> Folyamatos lövedékáradat forgó mintázatban (15 sebzés).</p>
-                </div>
-            </div>
-
-            <div class="enemy-info">
-                <div class="enemy-preview">
-                    <img src="assets/spawn.png" alt="Spawn Point" class="rotating">
-                </div>
-                <div class="enemy-details">
-                    <h3>Wormhole</h3>
-                    <p>Téridő anomália, ahonnan az ellenséges hullámok érkeznek. Pár másodperccel a megjelenése után aktiválódik. Az érkező szörnyek egy ideig sérthetetlenek. Minden körben két portál nyitódik.</p>
-                </div>
-            </div>
-
-            <div class="difficulty-wrapper">
-                <h2>Válassz nehézséget</h2>
-                <div class="difficulty-selection">
-                    <div class="difficulty-option" data-difficulty="too-young-to-die">
-                        <img src="assets/select.png" class="select-icon" alt="Selected">
-                        <span>I'M TOO YOUNG TO DIE</span>
-                    </div>
-                    <div class="difficulty-option" data-difficulty="hurt-me-plenty">
-                        <img src="assets/select.png" class="select-icon" alt="Selected">
-                        <span>HURT ME PLENTY</span>
-                    </div>
-                    <div class="difficulty-option selected" data-difficulty="ultra-violence">
-                        <img src="assets/select.png" class="select-icon" alt="Selected">
-                        <span>ULTRA-VIOLENCE</span>
-                    </div>
-                </div>
-
-                <div style="margin-top: 20px; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;" id="botToggleContainer">
-                    <label for="botMode" style="cursor: pointer;">BOT MÓD</label>
-                    <select id="botMode" style="font-size: 1rem; cursor: pointer;">
-                        <option value="off">Kézi irányítás</option>
-                        <option value="heuristic">Heurisztikus bot</option>
-                        <option value="neural">Neurális bot</option>
-                    </select>
-                </div>
-
-                <button id="startBtn">JÁTÉK INDÍTÁSA</button>
-            </div>
+            <button id="startBtn" type="button">ENTER ARENA</button>
         </div>
-    </div>
+    </section>
     <canvas id="gameCanvas"></canvas>
-    <script src="./node_modules/@tensorflow/tfjs/dist/tf.min.js"></script>
     <script type="module">
-        import { Game } from "./Game.js";
-        import { AudioService } from "./AudioService.js";
+        import { Game } from './Game.js';
+        import { getRegisteredBots } from './bots/BotRegistry.js';
 
-        const canvas = document.getElementById("gameCanvas");
-        const startModal = document.getElementById("startModal");
-        const startBtn = document.getElementById("startBtn");
-        const difficultyOptions = document.querySelectorAll('.difficulty-option');
-        const botModeSelect = document.getElementById("botMode");
-        const query = new URLSearchParams(window.location.search);
-        const automatedCollection = query.get('collectData') === '1';
-        const collectionPolicy = query.get('collectPolicy') || 'heuristic';
-        const collectionTarget = Math.max(1, Number.parseInt(query.get('collectTarget'), 10) || 50000);
-        const simulationStepsPerFrame = 30;
-        
-        const audio = new AudioService();
-        const selectionSound = new Audio('./assets/select.mp3');
-        selectionSound.volume = 1;
-
-        // Animate Revi preview
-        const reviPreview = document.getElementById('reviPreview');
-        if (reviPreview) {
-            setInterval(() => {
-                const currentSrc = reviPreview.src;
-                if (currentSrc.includes('revi-1.png')) {
-                    reviPreview.src = 'assets/revi-2.png';
-                } else {
-                    reviPreview.src = 'assets/revi-1.png';
-                }
-            }, 500);
-        }
-
-        // Try to play immediately (works in Electron with the configured autoplay policy)
-        audio.playMenuAmbience();
-
-        // Fallback for browsers: start menu ambience on first interaction
-        const startAmbience = () => {
-            if (audio.sounds.menuAmbience && audio.sounds.menuAmbience.paused) {
-                audio.playMenuAmbience();
-            }
-            window.removeEventListener('click', startAmbience);
-            window.removeEventListener('keydown', startAmbience);
-        };
-        window.addEventListener('click', startAmbience);
-        window.addEventListener('keydown', startAmbience);
-        
-        let selectedDifficulty = 'ultra-violence';
-
-        difficultyOptions.forEach(opt => {
-            opt.onclick = () => {
-                if (selectedDifficulty === opt.dataset.difficulty) return;
-
-                difficultyOptions.forEach(o => o.classList.remove('selected'));
-                opt.classList.add('selected');
-                selectedDifficulty = opt.dataset.difficulty;
-                
-                // Play selection sound
-                selectionSound.currentTime = 0;
-                selectionSound.play().catch(e => console.log('Audio playback prevented:', e));
-            };
-        });
+        const canvas = document.getElementById('gameCanvas');
+        const startModal = document.getElementById('startModal');
+        const startBtn = document.getElementById('startBtn');
+        const leftBot = document.getElementById('leftBot');
+        const rightBot = document.getElementById('rightBot');
+        let game = null;
+        let animationFrameId = null;
 
         const resizeCanvas = () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         };
-        window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
 
-        let gameInstance = null;
-        let animationFrameId = null;
-        let collectedTransitions = 0;
-
-        const returnToMenu = () => {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-                animationFrameId = null;
-            }
-            if (gameInstance) {
-                gameInstance.cleanup();
-                gameInstance = null;
-            }
-            
-            startModal.style.display = "flex";
-            document.body.style.cursor = "default";
-            
-            // Re-enable ambience listeners
-            window.addEventListener('click', startAmbience);
-            window.addEventListener('keydown', startAmbience);
-            
-            audio.playMenuAmbience();
+        const registeredBots = getRegisteredBots();
+        const populateBotSelect = (select, selectedId) => {
+            registeredBots.forEach(bot => {
+                const option = document.createElement('option');
+                option.value = bot.id;
+                option.textContent = bot.name;
+                select.appendChild(option);
+            });
+            select.value = selectedId;
         };
+        populateBotSelect(leftBot, 'idle-sentinel');
+        populateBotSelect(rightBot, 'idle-observer');
 
-        const startGame = (botMode, collectAutomatically, botType = 'heuristic', collectNeuralRollouts = false) => {
-            window.removeEventListener('click', startAmbience);
-            window.removeEventListener('keydown', startAmbience);
-            audio.stopMenuAmbience();
-            startModal.style.display = "none";
-            document.body.style.cursor = collectAutomatically ? 'default' : 'none';
-            resizeCanvas();
-
-            gameInstance = new Game(
-                canvas,
-                selectedDifficulty,
-                returnToMenu,
-                botMode,
-                { automatedCollection: collectAutomatically, botType, collectNeuralRollouts }
-            );
-
-            if (collectAutomatically) {
-                runCollectionFrame();
-                return;
+        const updateManualOption = (changedSelect, otherSelect) => {
+            const manualOption = [...otherSelect.options].find(option => option.value === 'manual');
+            manualOption.disabled = changedSelect.value === 'manual';
+            if (manualOption.disabled && otherSelect.value === 'manual') {
+                otherSelect.value = registeredBots.find(bot => bot.id !== 'manual').id;
             }
+        };
+        leftBot.addEventListener('change', () => updateManualOption(leftBot, rightBot));
+        rightBot.addEventListener('change', () => updateManualOption(rightBot, leftBot));
 
-            function gameLoop(timestamp) {
-                if (!gameInstance) return;
-                
+        startBtn.addEventListener('click', () => {
+            startModal.style.display = 'none';
+            resizeCanvas();
+            game = new Game(canvas, { left: leftBot.value, right: rightBot.value });
+
+            const gameLoop = timestamp => {
+                if (!game) return;
                 const deltaTime = Math.min(64, timestamp - (gameLoop.lastTimestamp || timestamp));
                 gameLoop.lastTimestamp = timestamp;
-
-                gameInstance.update(deltaTime);
-                gameInstance.draw();
+                game.update(deltaTime);
+                game.draw();
                 animationFrameId = requestAnimationFrame(gameLoop);
-            }
+            };
             gameLoop(performance.now());
-        };
+        });
 
-        const runCollectionFrame = async () => {
-            if (!gameInstance) return;
-
-            if (gameInstance.collectNeuralRollouts && !gameInstance.bot.ready) {
-                if (gameInstance.bot.loadError) {
-                    console.error('Neural rollout collection stopped because the model could not load.', gameInstance.bot.loadError);
-                    gameInstance.cleanup();
-                    gameInstance = null;
-                    return;
-                }
-                animationFrameId = requestAnimationFrame(runCollectionFrame);
-                return;
-            }
-
-            for (let step = 0; step < simulationStepsPerFrame && !gameInstance.gameOver; step++) {
-                gameInstance.update(16);
-            }
-
-            if (gameInstance.gameOver) {
-                const completedEpisode = gameInstance.episodeRecorder;
-                await completedEpisode.whenFlushed();
-                collectedTransitions += completedEpisode.transitionCount;
-                const complete = collectedTransitions >= collectionTarget;
-                window.swarmTraining.reportCollectionProgress({
-                    total: collectedTransitions,
-                    target: collectionTarget,
-                    complete
-                });
-
-                if (complete) {
-                    gameInstance.cleanup();
-                    gameInstance = null;
-                    window.swarmTraining.completeCollection();
-                    return;
-                }
-                gameInstance.resetGame(true);
-            }
-
-            animationFrameId = requestAnimationFrame(runCollectionFrame);
-        };
-
-        startBtn.onclick = e => {
-            if (e) e.stopPropagation();
-            const botType = botModeSelect.value;
-            startGame(botType !== 'off', false, botType);
-        };
-
-        if (automatedCollection) {
-            startGame(true, true, collectionPolicy, collectionPolicy === 'neural');
-        }
+        window.addEventListener('beforeunload', () => {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (game) game.cleanup();
+        });
     </script>
 </body>
 </html>

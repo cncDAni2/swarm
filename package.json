@@ -1,19 +1,12 @@
 {
   "name": "swarm",
   "version": "1.0.0",
-  "description": "A top-down swarm shooter implementation using vanilla JavaScript and HTML5 Canvas.",
+  "description": "A two-bot arena foundation using vanilla JavaScript, HTML5 Canvas, and Electron.",
   "main": "main.js",
   "scripts": {
     "start": "python -m http.server 4200",
     "start-exe": "electron .",
-    "collect-data": "electron . --collect-data",
-    "collect-rollouts": "electron . --collect-rollouts",
     "build": "electron-builder",
-    "create-initial-model": "node training/createInitialModel.cjs",
-    "check-training-data": "node training/checkTrainingData.cjs",
-    "train-imitation": "node training/trainImitation.cjs",
-    "train-ppo": "node training/trainPpo.cjs",
-    "train-ppo-loop": "node training/trainPpoLoop.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {
@@ -35,7 +28,5 @@
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3"
   },
-  "dependencies": {
-    "@tensorflow/tfjs": "^4.22.0"
-  }
+  "dependencies": {}
 }

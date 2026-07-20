@@ -1,50 +1,57 @@
-# SWARM Game
+# SWARM Arena
 
-A top-down swarm shooter implementation using vanilla JavaScript and HTML5 Canvas.
-Built itch.io link: https://cncdani2.itch.io/swarm-test-project
+A minimal two-bot arena foundation built with HTML5 Canvas and Electron.
 
-## Local Development Setup
+Both participants use the player sprite, spawn on opposite sides, and have health, energy, movement, and plasma-fire state ready for future bot controllers. The two starter bot types are intentionally idle.
 
-Because the game uses **ES6 Modules**, you cannot run it by simply opening the `index.html` file in your browser from the file system (due to CORS policy). You must serve the files via a local HTTP server.
+## Registered Bots
 
-### Option 1: Python (Recommended)
-If you have Python installed, you can start a server with a single command:
+Every selectable bot is a controller class in [bots](bots). It must extend [bots/BotController.js](bots/BotController.js), declare a unique `static id` and `static displayName`, and implement `start(context)` and `stop()`. The registry in [bots/BotRegistry.js](bots/BotRegistry.js) validates and registers each class; both side selectors are populated directly from that registry.
 
-**Python 3.x:**
-```bash
-python -m http.server 8000
+To add a bot, create a controller and add one import plus `registerBot(YourBot)` in [bots/BotRegistry.js](bots/BotRegistry.js):
+
+```js
+import { BotController } from './BotController.js';
+
+export class RangeKeeperBot extends BotController {
+static id = 'range-keeper';
+static displayName = 'Range Keeper';
+
+start(context) {
+this.context = context;
+}
+
+update(_deltaTime) {
+const state = this.context.getState();
+this.context.move(0, 0);
+this.context.fireAt(state.opponent.x, state.opponent.y);
+}
+
+stop() {
+this.context = null;
+}
+}
 ```
 
-Then open your browser and navigate to `http://localhost:8000`.
+`start(context)` receives a stable, narrow API:
 
-## Asztali alkalmazás (Electron)
+- `context.getState()` returns frozen snapshots of the bot, opponent, arena, and match status.
+- `context.getInput()` returns manual keyboard, pointer, and firing input. Only `ManualBot` should need it.
+- `context.move(directionX, directionY)` moves the bot for the current frame. Values are normally in the range $[-1, 1]$.
+- `context.fireAt(targetX, targetY)` attempts a plasma shot and returns whether it fired.
 
-A játék elérhető asztali alkalmazásként is az Electron keretrendszernek köszönhetően.
+Controllers retain this context in `start`, make decisions in optional `update(deltaTime)`, and discard timers, event listeners, and references in `stop`. They do not mutate game objects directly. The game owns physics, cooldowns, collision, damage, health, and match completion, which keeps every bot implementation on the same ruleset.
 
-### Futtatás fejlesztői módban
-A játék elindításához Electron-ban:
-```bash
+## Run
+
+```powershell
 npm start
 ```
 
-### EXE fájl készítése (Build)
-A játékot az alábbi paranccsal fordíthatod át egyetlen futtatható EXE fájlba:
-```bash
-npm run build
+Open `http://localhost:4200`.
+
+```powershell
+npm start-exe
 ```
-A kész alkalmazás a `dist/` mappában fog megjelenni.
 
-### Option 2: Node.js (http-server)
-If you have Node.js installed, you can use the `http-server` package:
-```bash
-npx http-server .
-```
-Then navigate to the URL provided in the terminal (usually `http://localhost:8080`).
-
-### Option 3: VS Code "Live Server" Extension
-If you use VS Code, you can install the **Live Server** extension (by Ritwick Dey) and click the "Go Live" button in the status bar while `index.html` is open.
-
-## Controls
-- **Movement**: WASD
-- **Aim**: Mouse
-- **Shoot**: Left Mouse Button
+Runs the Electron version.
