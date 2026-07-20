@@ -95,6 +95,9 @@ app.whenReady().then(() => {
                 : `SWARM Data Collection: ${total} / ${target}`
         );
     });
+    ipcMain.on('swarm-training:collection-complete', event => {
+        event.sender.getOwnerBrowserWindow()?.close();
+    });
     createWindow();
 
     app.on('activate', () => {

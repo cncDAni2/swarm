@@ -13,6 +13,7 @@
     "check-training-data": "node training/checkTrainingData.cjs",
     "train-imitation": "node training/trainImitation.cjs",
     "train-ppo": "node training/trainPpo.cjs",
+    "train-ppo-loop": "node training/trainPpoLoop.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {

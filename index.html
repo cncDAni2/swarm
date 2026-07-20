@@ -475,6 +475,7 @@
                 if (complete) {
                     gameInstance.cleanup();
                     gameInstance = null;
+                    window.swarmTraining.completeCollection();
                     return;
                 }
                 gameInstance.resetGame(true);

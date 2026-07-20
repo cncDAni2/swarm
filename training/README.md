@@ -66,6 +66,22 @@ npm run train-ppo
 
 Neural rollout files are stored separately in `%APPDATA%\swarm\training\rollouts`. Each line includes the action's old log-probability and value estimate as well as the reward transition. The first PPO training run upgrades the 27-output imitation model to 28 outputs by adding a value head; the game continues to use only the first 27 actor logits.
 
+PPO uses conservative defaults: two epochs, learning rate `0.00003`, normalized value targets, and global gradient clipping. These intentionally preserve the useful imitation policy while the new value head learns. Each PPO run backs up the previous model under `training/models/imitation-policy/backups/` before overwriting it.
+
 After a successful PPO update, the trainer archives the consumed rollout files under `rollouts/archive/`, so the next collection command produces a fresh on-policy batch automatically.
+
+To run a bounded automated sequence, use:
+
+```powershell
+npm run train-ppo-loop
+```
+
+This runs 10 cycles of 10,000 transitions by default. The first argument is the number of PPO cycles and the second is the rollout size:
+
+```powershell
+npm run train-ppo-loop -- 20 10000
+```
+
+The loop stops immediately if rollout collection or PPO training fails. Check the neural bot after each 5 to 10 cycles rather than running it indefinitely.
 
 After training, start the game normally with `npm run start-exe` and select **Neurális bot** from the bot-mode menu. The game loads `training/models/imitation-policy/model.json` plus its weights automatically. Compare its survival time and reached round to the heuristic bot before beginning reward-based fine-tuning.

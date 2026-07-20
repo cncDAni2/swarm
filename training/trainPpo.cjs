@@ -43,11 +43,13 @@ function parseArguments() {
             ? path.join(process.env.APPDATA, 'swarm', 'training', 'rollouts')
             : path.join(process.cwd(), 'training', 'data', 'rollouts')),
         modelDirectory: read('--model') || path.join(__dirname, 'models', 'imitation-policy'),
-        epochs: positiveInteger(read('--epochs'), 8),
+        epochs: positiveInteger(read('--epochs'), 2),
         batchSize: positiveInteger(read('--batch-size'), 512),
-        learningRate: 0.0002,
-        clipRange: 0.2,
-        gamma: 0.995
+        learningRate: 0.00003,
+        clipRange: 0.1,
+        gamma: 0.995,
+        valueCoefficient: 0.1,
+        maxGradientNorm: 0.5
     };
 }
 
@@ -96,13 +98,17 @@ async function loadRollouts(directory) {
 }
 
 function discountedAdvantages(transitions, gamma) {
-    const returns = new Array(transitions.length);
+    const rawReturns = new Array(transitions.length);
     let runningReturn = 0;
     for (let index = transitions.length - 1; index >= 0; index--) {
         const transition = transitions[index];
         runningReturn = transition.reward + (transition.done ? 0 : gamma * runningReturn);
-        returns[index] = runningReturn;
+        rawReturns[index] = runningReturn;
     }
+    const returnMean = rawReturns.reduce((sum, value) => sum + value, 0) / rawReturns.length;
+    const returnVariance = rawReturns.reduce((sum, value) => sum + (value - returnMean) ** 2, 0) / rawReturns.length;
+    const returnScale = Math.sqrt(returnVariance) + 1e-8;
+    const returns = rawReturns.map(value => (value - returnMean) / returnScale);
     const advantages = returns.map((value, index) => value - transitions[index].policy.value);
     const mean = advantages.reduce((sum, value) => sum + value, 0) / advantages.length;
     const variance = advantages.reduce((sum, value) => sum + (value - mean) ** 2, 0) / advantages.length;
@@ -157,7 +163,7 @@ function actionLogProbability(tf, logits, labels) {
     return tf.addN(parts);
 }
 
-function ppoLoss(tf, model, states, targets, clipRange) {
+function ppoLoss(tf, model, states, targets, clipRange, valueCoefficient) {
     return tf.tidy(() => {
         const labels = targets.slice([0, 0], [-1, 3]);
         const oldLogProbability = targets.slice([0, 3], [-1, 1]).squeeze([1]);
@@ -172,7 +178,7 @@ function ppoLoss(tf, model, states, targets, clipRange) {
         const clipped = tf.clipByValue(ratio, 1 - clipRange, 1 + clipRange).mul(advantages);
         const actorLoss = tf.mean(tf.minimum(unclipped, clipped)).neg();
         const valueLoss = tf.mean(tf.square(values.sub(returns))).mul(0.5);
-        return actorLoss.add(valueLoss.mul(0.5));
+        return actorLoss.add(valueLoss.mul(valueCoefficient));
     });
 }
 
@@ -190,6 +196,20 @@ async function saveModel(tf, model, outputDirectory, metadata) {
         return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' } };
     }));
     await fs.writeFile(path.join(outputDirectory, 'metadata.json'), JSON.stringify(metadata, null, 2));
+}
+
+async function backupExistingModel(modelDirectory) {
+    const backupDirectory = path.join(modelDirectory, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
+    await fs.mkdir(backupDirectory, { recursive: true });
+    for (const filename of ['model.json', 'weights.bin', 'metadata.json']) {
+        const source = path.join(modelDirectory, filename);
+        try {
+            await fs.copyFile(source, path.join(backupDirectory, filename));
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+    }
+    return backupDirectory;
 }
 
 async function archiveRollouts(rolloutDirectory, files) {
@@ -238,8 +258,21 @@ async function main() {
             const indices = tf.tensor1d(batchIndices, 'int32');
             const batchStates = tf.gather(states, indices);
             const batchTargets = tf.gather(targets, indices);
-            const result = tf.variableGrads(() => ppoLoss(tf, model, batchStates, batchTargets, options.clipRange));
-            optimizer.applyGradients(result.grads);
+            const result = tf.variableGrads(() => ppoLoss(
+                tf,
+                model,
+                batchStates,
+                batchTargets,
+                options.clipRange,
+                options.valueCoefficient
+            ));
+            const clippedGradients = tf.tidy(() => {
+                const squaredNorm = tf.addN(Object.values(result.grads).map(gradient => tf.sum(tf.square(gradient))));
+                const globalNorm = tf.sqrt(squaredNorm);
+                const scale = tf.minimum(tf.scalar(1), tf.scalar(options.maxGradientNorm).div(globalNorm.add(1e-8)));
+                return Object.fromEntries(Object.entries(result.grads).map(([name, gradient]) => [name, gradient.mul(scale)]));
+            });
+            optimizer.applyGradients(clippedGradients);
             lossTotal += result.value.dataSync()[0];
             batches++;
             indices.dispose();
@@ -247,10 +280,12 @@ async function main() {
             batchTargets.dispose();
             result.value.dispose();
             Object.values(result.grads).forEach(gradient => gradient.dispose());
+            Object.values(clippedGradients).forEach(gradient => gradient.dispose());
         }
         console.log(`PPO epoch ${epoch + 1}/${options.epochs}: loss=${(lossTotal / batches).toFixed(4)}`);
     }
 
+    const backupDirectory = await backupExistingModel(options.modelDirectory);
     await saveModel(tf, model, options.modelDirectory, {
         schemaVersion: 1,
         observationSize: OBSERVATION_SIZE,
@@ -264,6 +299,10 @@ async function main() {
             rolloutFiles: rollout.files,
             epochs: options.epochs,
             batchSize: options.batchSize,
+            learningRate: options.learningRate,
+            clipRange: options.clipRange,
+            valueCoefficient: options.valueCoefficient,
+            maxGradientNorm: options.maxGradientNorm,
             backend: tf.getBackend(),
             createdAt: new Date().toISOString()
         }
@@ -273,6 +312,7 @@ async function main() {
     targets.dispose();
     model.dispose();
     console.log(`Saved PPO policy to ${options.modelDirectory}`);
+    console.log(`Backed up the previous policy to ${backupDirectory}`);
     console.log(`Archived consumed rollouts to ${archiveDirectory}`);
 }
 
