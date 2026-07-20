@@ -52,49 +52,54 @@ export class GeminiThreeFlashBot3 extends BotController {
         let moveX = 0;
         let moveY = 0;
 
-        // 1. Avoid walls (rule the middle section)
-        const wallPadding = 120; // Increased padding
-        if (self.x < wallPadding) moveX += 1.5;
-        else if (self.x > arena.width - wallPadding) moveX -= 1.5;
-        if (self.y < wallPadding) moveY += 1.5;
-        else if (self.y > arena.height - wallPadding) moveY -= 1.5;
-
-        // 2. Distance Management
-        // Stay close if they aren't shooting or have low energy
-        let targetDist = (opponent.energy < 10 || !this.isOpponentActivelyShooting) ? 120 : 550;
+        // 1. Center-seeking force (Avoid edges at all cost)
+        const centerX = arena.width / 2;
+        const centerY = arena.height / 2;
+        const fromCenterX = self.x - centerX;
+        const fromCenterY = self.y - centerY;
+        const distFromCenter = Math.hypot(fromCenterX, fromCenterY);
         
-        // When we have health advantage, be more aggressive
+        // Push towards center, especially when near edges
+        const edgeThreshold = Math.min(arena.width, arena.height) * 0.35;
+        if (distFromCenter > edgeThreshold) {
+            const pull = Math.pow((distFromCenter - edgeThreshold) / edgeThreshold, 2);
+            moveX -= (fromCenterX / distFromCenter) * pull * 2.0;
+            moveY -= (fromCenterY / distFromCenter) * pull * 2.0;
+        }
+
+        // 2. Distance Management & Orbiting
+        let targetDist = (opponent.energy < 10 || !this.isOpponentActivelyShooting) ? 140 : 580;
+        
         if (self.health > opponent.health + 30) {
-            targetDist = Math.max(100, targetDist - 150);
+            targetDist = Math.max(120, targetDist - 200);
         }
 
-        if (dist > targetDist + 20) {
-            moveX += dx / dist;
-            moveY += dy / dist;
-        } else if (dist < targetDist - 20) {
-            // Move backwards when bot shot at you
-            if (this.isOpponentActivelyShooting) {
-                this.circleAngle += 0.1 * this.dodgeDirection;
-                const circleX = Math.cos(this.circleAngle);
-                const circleY = Math.sin(this.circleAngle);
-                // Stronger backwards and circling
-                moveX -= (dx / dist) * 1.5 + circleX * 0.6;
-                moveY -= (dy / dist) * 1.5 + circleY * 0.6;
-            } else {
-                moveX -= dx / dist;
-                moveY -= dy / dist;
-            }
-        } else if (this.isOpponentActivelyShooting) {
-            this.circleAngle += 0.1 * this.dodgeDirection;
-            moveX += Math.cos(this.circleAngle);
-            moveY += Math.sin(this.circleAngle);
+        // Calculate Orbiting Vectors
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const tx = -uy * this.dodgeDirection; // Tangent X
+        const ty = ux * this.dodgeDirection;  // Tangent Y
+
+        if (dist > targetDist + 40) {
+            // Approach while orbiting slightly
+            moveX += ux + tx * 0.3;
+            moveY += uy + ty * 0.3;
+        } else if (dist < targetDist - 40) {
+            // Retreat while orbiting hard
+            moveX -= ux * 1.5 - tx * 1.0;
+            moveY -= uy * 1.5 - ty * 1.0;
+        } else {
+            // Maintain distance by pure orbiting
+            moveX += tx;
+            moveY += ty;
         }
 
-        // 3. Dodge enemy shots - More precise and aggressive
+        // 3. Dodge enemy shots - Priority override
         const enemyBullets = bullets.filter(b => b.isEnemy);
         let dodgeX = 0;
         let dodgeY = 0;
         let isCriticalDodge = false;
+        let highestDanger = 0;
 
         for (const bullet of enemyBullets) {
             const bsX = self.x - bullet.x;
@@ -102,38 +107,40 @@ export class GeminiThreeFlashBot3 extends BotController {
             const bSpeed = Math.hypot(bullet.vx, bullet.vy);
             if (bSpeed === 0) continue;
 
-            const ux = bullet.vx / bSpeed;
-            const uy = bullet.vy / bSpeed;
+            const bux = bullet.vx / bSpeed;
+            const buy = bullet.vy / bSpeed;
 
-            const dot = bsX * ux + bsY * uy;
-            if (dot > 0 && dot < 600) { // Only care about bullets ahead and relatively close
-                const projX = bullet.x + ux * dot;
-                const projY = bullet.y + uy * dot;
+            const dot = bsX * bux + bsY * buy;
+            // Only care about bullets approaching
+            if (dot > 0 && dot < 650) {
+                const projX = bullet.x + bux * dot;
+                const projY = bullet.y + buy * dot;
                 const distToPath = Math.hypot(self.x - projX, self.y - projY);
 
-                if (distToPath < 85) { // Increased safety margin
+                if (distToPath < 90) { // Safety margin
                     isCriticalDodge = true;
-                    // Move perpendicular to bullet path, prioritized
-                    const perpX = -uy * this.dodgeDirection;
-                    const perpY = ux * this.dodgeDirection;
+                    // Dodge perpendicular to bullet path
+                    const danger = 1 - (distToPath / 90);
+                    if (danger > highestDanger) highestDanger = danger;
+
+                    // Choose dodge direction based on which side of the path we are on
+                    // to maximize exit speed from path
+                    const side = Math.sign(bsX * (-buy) + bsY * bux);
+                    const forceDir = side !== 0 ? side : this.dodgeDirection;
                     
-                    // The closer the bullet, the harder we dodge
-                    const proximityWeight = 2.0 * (1 - distToPath / 85);
-                    dodgeX += perpX * proximityWeight;
-                    dodgeY += perpY * proximityWeight;
-                    
-                    // Also move slightly away from the bullet itself
-                    dodgeX += (bsX / Math.hypot(bsX, bsY)) * 0.2;
-                    dodgeY += (bsY / Math.hypot(bsX, bsY)) * 0.2;
+                    dodgeX += (-buy) * forceDir * danger;
+                    dodgeY += (bux) * forceDir * danger;
                 }
             }
         }
 
         if (isCriticalDodge) {
-            moveX = moveX * 0.2 + dodgeX * 2.0;
-            moveY = moveY * 0.2 + dodgeY * 2.0;
+            // When dodging, give it massive priority
+            moveX = moveX * 0.1 + dodgeX * 3.5;
+            moveY = moveY * 0.1 + dodgeY * 3.5;
             
-            if (Math.random() < 0.02) this.dodgeDirection *= -1;
+            // Periodically consider flipping orbit direction if we get stuck or to confuse enemy
+            if (Math.random() < 0.005) this.dodgeDirection *= -1;
         }
 
         // Apply movement
@@ -175,9 +182,9 @@ export class GeminiThreeFlashBot3 extends BotController {
 
         // Redefined 3 targets to be less scattered
         const targets = [
-            getProjectedPos(timeToHit, 0.2), // Mostly maintaining current speed
-            getProjectedPos(timeToHit, 0.8), // Accelerating forward
-            getProjectedPos(timeToHit, -0.5) // Braking/Turning
+            getProjectedPos(timeToHit, 0.4), // Predicted speed maintaining drift
+            getProjectedPos(timeToHit, 0.7), // Slight acceleration
+            getProjectedPos(timeToHit, 0.1)  // Breaking slightly
         ];
 
         // Shooting constraints
@@ -186,24 +193,28 @@ export class GeminiThreeFlashBot3 extends BotController {
             canShoot = true; 
         } else {
             if (self.energy >= 100) this.waitingForFull = false;
-            if (self.energy < 40) this.waitingForFull = true;
-            if (!this.waitingForFull && self.energy >= 40) canShoot = true;
+            if (self.energy < 50) this.waitingForFull = true;
+            if (!this.waitingForFull && self.energy >= 50) canShoot = true;
         }
 
-        // Don't shoot if too far - improved limit
-        if (dist > 650) canShoot = false;
+        // Don't shoot if too far
+        if (dist > 600) canShoot = false;
 
         if (canShoot) {
             let finalTarget;
-            if (dist < 200) {
+            if (dist < 150) {
                 finalTarget = { x: opponent.x, y: opponent.y };
             } else {
+                // Pick the target in the sequence
                 finalTarget = targets[this.lastPredictionIndex];
             }
 
             const fired = this.context.fireAt(finalTarget.x, finalTarget.y);
             if (fired) {
-                this.lastPredictionIndex = (this.lastPredictionIndex + 1) % targets.length;
+                // Change point less often to create "bursts" at a location
+                if (Math.random() < 0.3) {
+                    this.lastPredictionIndex = (this.lastPredictionIndex + 1) % targets.length;
+                }
             }
         }
     }
