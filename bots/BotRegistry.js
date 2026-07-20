@@ -3,6 +3,7 @@ import { IdleObserverBot } from './IdleObserverBot.js';
 import { IdleSentinelBot } from './IdleSentinelBot.js';
 import { ManualBot } from './ManualBot.js';
 import { GeminiThreeFlashBot } from './GeminiThreeFlashBot.js';
+import { Sonnet5MaxBot } from './Sonnet5MaxBot.js';
 
 const botClasses = new Map();
 
@@ -45,3 +46,4 @@ registerBot(ManualBot);
 registerBot(IdleSentinelBot);
 registerBot(IdleObserverBot);
 registerBot(GeminiThreeFlashBot);
+registerBot(Sonnet5MaxBot);
