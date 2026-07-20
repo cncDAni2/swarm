@@ -147,10 +147,10 @@ export class Game {
             vy: Math.sin(angle) * bot.bulletSpeed,
             radius: isPowerful ? 6 : 4,
             color: isPowerful ? '#87ceeb' : '#f4d35e',
-            damage: isPowerful ? 1.5 : 1,
+            damage: isPowerful ? 8 : 5,
             source: bot
         });
-        bot.energy = Math.max(0, bot.energy - 1);
+        bot.energy = Math.max(0, bot.energy - 2);
         bot.facing = Math.sign(Math.cos(angle)) || bot.facing;
         bot.shootVisualTimer = 100;
         bot.lastShotTime = this.gameTime;
@@ -161,7 +161,7 @@ export class Game {
 
     regenerateEnergy(bot, deltaTime) {
         if (this.gameTime - bot.lastShotTime >= 2000) {
-            bot.energy = Math.min(bot.maxEnergy, bot.energy + 3 * deltaTime / 1000);
+            bot.energy = Math.min(bot.maxEnergy, bot.energy + 30 * deltaTime / 1000);
         }
     }
 
@@ -218,6 +218,15 @@ export class Game {
         ctx.strokeStyle = '#f7f7f2';
         ctx.lineWidth = 1;
         ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        const energyBarHeight = 3;
+        const energyBarY = barY + barHeight + 2;
+        ctx.fillStyle = '#071f3d';
+        ctx.fillRect(barX, energyBarY, barWidth, energyBarHeight);
+        ctx.fillStyle = '#39a9ff';
+        ctx.fillRect(barX, energyBarY, barWidth * (bot.energy / bot.maxEnergy), energyBarHeight);
+        ctx.strokeStyle = '#b9e2ff';
+        ctx.strokeRect(barX, energyBarY, barWidth, energyBarHeight);
     }
 
     drawBullets() {
@@ -331,9 +340,14 @@ export class Game {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = 'bold 48px Trebuchet MS, sans-serif';
-        ctx.fillText(`${this.winner.side.toUpperCase()} SIDE WINS`, this.canvas.width / 2, this.canvas.height / 2 - 18);
+        ctx.fillText(`${this.winner.side.toUpperCase()} SIDE WINS`, this.canvas.width / 2, this.canvas.height / 2 - 48);
         ctx.font = '24px Trebuchet MS, sans-serif';
-        ctx.fillText(this.winner.name, this.canvas.width / 2, this.canvas.height / 2 + 32);
+        ctx.fillText(this.winner.name, this.canvas.width / 2, this.canvas.height / 2 + 2);
+        ctx.font = '20px Trebuchet MS, sans-serif';
+        const healthPercentage = Math.round(this.winner.health / this.winner.maxHealth * 100);
+        const matchDuration = (this.gameTime / 1000).toFixed(1);
+        ctx.fillText(`Remaining health: ${healthPercentage}%`, this.canvas.width / 2, this.canvas.height / 2 + 40);
+        ctx.fillText(`Match duration: ${matchDuration} s`, this.canvas.width / 2, this.canvas.height / 2 + 72);
         ctx.restore();
     }
 }
