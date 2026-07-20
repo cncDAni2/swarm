@@ -147,10 +147,10 @@ export class Game {
             vy: Math.sin(angle) * bot.bulletSpeed,
             radius: isPowerful ? 6 : 4,
             color: isPowerful ? '#87ceeb' : '#f4d35e',
-            damage: isPowerful ? 1.5 : 1,
+            damage: isPowerful ? 8 : 3,
             source: bot
         });
-        bot.energy = Math.max(0, bot.energy - 1);
+        bot.energy = Math.max(0, bot.energy - 2);
         bot.facing = Math.sign(Math.cos(angle)) || bot.facing;
         bot.shootVisualTimer = 100;
         bot.lastShotTime = this.gameTime;
