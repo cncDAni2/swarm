@@ -12,6 +12,7 @@ import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot-v2.js';
 import { Grok45MaxBot } from './Grok45MaxBot.js';
 import { Grok45MaxWPBot } from './Grok45MaxWPBot.js';
 import { SolMedBot } from './SolMedBot.js';
+import { SolMaxBot } from './SolMaxBot.js';
 
 const botClasses = new Map();
 
@@ -58,10 +59,11 @@ registerBot(TerraMedBot);
 registerBot(TerraMaxBot);
 registerBot(Sonnet5MaxBot);
 registerBot(SolMedBot);
+registerBot(SolMaxBot);
 registerBot(GeminiThreeFlashBot);
 registerBot(GeminiThreeFlashBot2);
 registerBot(GeminiThreeFlashBot3);
 registerBot(Grok45MaxBot);
 registerBot(Grok45MaxWPBot);
-registerBot(IdleSentinelBot);
 registerBot(IdleObserverBot);
+
