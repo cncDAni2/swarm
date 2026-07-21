@@ -65,5 +65,4 @@ registerBot(GeminiThreeFlashBot2);
 registerBot(GeminiThreeFlashBot3);
 registerBot(Grok45MaxBot);
 registerBot(Grok45MaxWPBot);
-registerBot(IdleObserverBot);
 
