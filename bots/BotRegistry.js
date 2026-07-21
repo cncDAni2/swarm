@@ -9,6 +9,8 @@ import { GeminiThreeFlashBot } from './GeminiThreeFlashBot-v1.js';
 import { TerraMaxBot } from './TerraMaxBot.js';
 import { TerraMedBot } from './TerraMedBot.js';
 import { GeminiThreeFlashBot2 } from './GeminiThreeFlashBot-v2.js';
+import { Grok45MaxBot } from './Grok45MaxBot.js';
+import { Grok45MaxWPBot } from './Grok45MaxWPBot.js';
 
 const botClasses = new Map();
 
@@ -49,11 +51,13 @@ export function createBotController(id) {
 
 registerBot(ManualBot);
 registerBot(IdleObserverBot);
+registerBot(LunaLowBot);
+registerBot(LunaMaxBot);
+registerBot(TerraMedBot);
+registerBot(TerraMaxBot);
+registerBot(Sonnet5MaxBot);
 registerBot(GeminiThreeFlashBot);
 registerBot(GeminiThreeFlashBot2);
 registerBot(GeminiThreeFlashBot3);
-registerBot(Sonnet5MaxBot);
-registerBot(TerraMaxBot);
-registerBot(LunaMaxBot);
-registerBot(TerraMedBot);
-registerBot(LunaLowBot);
+registerBot(Grok45MaxBot);
+registerBot(Grok45MaxWPBot);

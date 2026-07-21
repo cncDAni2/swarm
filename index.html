@@ -49,7 +49,14 @@
         }
         .subtitle { color: var(--muted); margin: 8px 0 30px; }
         .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-        .slot { border-top: 3px solid var(--gold); padding-top: 12px; }
+        .slot { border-top: 3px solid var(--gold); padding-top: 12px; display: flex; flex-direction: column; }
+        .bot-description {
+            margin-top: 12px;
+            font-size: 0.85rem;
+            color: var(--muted);
+            line-height: 1.4;
+            flex-grow: 1;
+        }
         label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
         select, button {
             width: 100%;
@@ -71,24 +78,30 @@
             .setup { padding: 24px; }
             .slots { grid-template-columns: 1fr; }
         }
+
+        #startBtn {
+            margin-top: 1rem;
+        }
     </style>
 </head>
 <body>
     <section id="startModal" aria-label="Arena setup">
         <div class="setup">
-            <h1>SWARM ARENA</h1>
-            <p class="subtitle">Select the two bot placeholders that enter the arena.</p>
+            <h1>SWARM - ARENA MÓD</h1>
+            <p class="subtitle">Válassz két botot az arénába.</p>
             <div class="slots">
                 <div class="slot">
-                    <label for="leftBot">LEFT SIDE</label>
+                    <label for="leftBot">BAL OLDAL</label>
                     <select id="leftBot"></select>
+                    <div id="leftDesc" class="bot-description"></div>
                 </div>
                 <div class="slot">
-                    <label for="rightBot">RIGHT SIDE</label>
+                    <label for="rightBot">JOBB OLDAL</label>
                     <select id="rightBot"></select>
+                    <div id="rightDesc" class="bot-description"></div>
                 </div>
             </div>
-            <button id="startBtn" type="button">ENTER ARENA</button>
+            <button id="startBtn" type="button">BELÉPÉS AZ ARÉNÁBA</button>
         </div>
     </section>
     <canvas id="gameCanvas"></canvas>
@@ -101,8 +114,25 @@
         const startBtn = document.getElementById('startBtn');
         const leftBot = document.getElementById('leftBot');
         const rightBot = document.getElementById('rightBot');
+        const leftDesc = document.getElementById('leftDesc');
+        const rightDesc = document.getElementById('rightDesc');
         let game = null;
         let animationFrameId = null;
+
+        const botDescriptions = {
+            'manual': 'Te irányítod a WASD és egér/bal klikk gombokkal szabadon',
+            'idle-observer': 'Bot ami nem csinál semmit',
+            'luna-low': 'Basic "blind" prompt-al készült. Csupán lő és gyorsan random mozog. Ára 8.4 kredit.',
+            'luna-max': 'Basic "blind" prompt-al készült. Rosszul de prediktívan lő; menekül a golyózápor elől. Ára ~50 kredit',
+            'terra-med': 'Basic "blind" prompt-al készült. Jól lő prediktívan, próbál dodge-olni, Ára: 21.7 kredit',
+            'terra-max': 'Basic "blind" prompt-al készült. Jól lő prediktíven, próbál dodge-olni és vár energiát. Ára: 144.6 kredit',
+            'sonnet5-max': 'Basic "blind" prompt-al készült. Prediktívan lő, super dodge-ol, energiát vár, nem hagyja magát beszorítani; Sonnet 5 modell-t használt MAX effort-al. Ára 477 kredit, de túlcsordult a limitemen. Csalt: megtalálta a többi botot* és versenyeztette/trainingelte vele magát egy általa kreált szimulált környezetben (* Mind, kivéve Gemini és Grok botok)',
+            'gemini-3-flash': 'Speciális prompt-ot kapott bot, Gemini 3 Flash (preview) modell-t használva, High effort-on, Képes dodge-olni, mérlegelni, taktikákat használni, agresszívan támadni, optimálisan várni az energiatöltöttséget. Ára: 0.33 Premium request',
+            'gemini-3-flash-2': 'Ugyanaz mint a normál "Gemini 3 Flash WP", viszont engedve lett hogy a Sonnet 5 Max-al szimuláljon játékmeneteket és ez alapján állítsa játékstílusát, így az Ára: 0.66 Premium request',
+            'gemini-3-flash-3': 'A "Gemini 3 Flash WP | V2" továbbfejlesztése, további 1 prompt-ot kapva, ahol leírtam a tapasztalt hibákat, így ezeket javítva egy legyőzhetetlen botot alkotott.',
+            'grok-45-max': 'Basic "blind" prompt-al készült, de korábban a Gemini speciális promptja által feltuning game engine-nek dolgozott, így teljesen dodge-ol, energiát vár, jól lő prediktívan. A jelenleg ingyenesen kipróbálható Grok 4.5 modell-lel készült, Max effort-al.',
+            'grok-45-max-wp': 'Speciális prompt-ot kapott bot. Képes dodge-olni, mérlegelni, taktikákat használni, agresszívan támadni. A jelenleg ingyenesen kipróbálható Grok 4.5 modell-lel készült, Max effort-al.'
+        };
 
         const resizeCanvas = () => {
             canvas.width = window.innerWidth;
@@ -124,6 +154,12 @@
         populateBotSelect(leftBot, 'manual');
         populateBotSelect(rightBot, 'idle-observer');
 
+        const updateDescriptions = () => {
+            leftDesc.textContent = botDescriptions[leftBot.value] || '';
+            rightDesc.textContent = botDescriptions[rightBot.value] || '';
+        };
+        updateDescriptions();
+
         const rematch = () => {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             if (game) game.cleanup();
@@ -144,8 +180,14 @@
                 otherSelect.value = registeredBots.find(bot => bot.id !== 'manual').id;
             }
         };
-        leftBot.addEventListener('change', () => updateManualOption(leftBot, rightBot));
-        rightBot.addEventListener('change', () => updateManualOption(rightBot, leftBot));
+        leftBot.addEventListener('change', () => {
+            updateManualOption(leftBot, rightBot);
+            updateDescriptions();
+        });
+        rightBot.addEventListener('change', () => {
+            updateManualOption(rightBot, leftBot);
+            updateDescriptions();
+        });
 
         startBtn.addEventListener('click', () => {
             startModal.style.display = 'none';
